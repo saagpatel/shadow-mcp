@@ -39,14 +39,24 @@ def build_shadow_findings(graded: list[GradedServer]) -> list[ShadowFinding]:
             )
 
         if e.running and not e.configured:
-            findings.append(
-                ShadowFinding(
-                    kind="running_unconfigured",
-                    server=e.canonical_name,
-                    detail="live MCP process with no matching entry in any client config (MCP09 shadow server)",
-                    band="high",
+            if e.standalone_process:
+                findings.append(
+                    ShadowFinding(
+                        kind="running_unconfigured",
+                        server=e.canonical_name,
+                        detail="live MCP process not spawned by any MCP host and absent from every config (MCP09 shadow server)",
+                        band="high",
+                    )
                 )
-            )
+            else:
+                findings.append(
+                    ShadowFinding(
+                        kind="host_spawned_unconfigured",
+                        server=e.canonical_name,
+                        detail="running form of a host/plugin-managed server (spawned by an MCP host, not in any user config)",
+                        band="low",
+                    )
+                )
 
         if e.host_count >= 3:
             findings.append(

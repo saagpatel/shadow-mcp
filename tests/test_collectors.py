@@ -55,25 +55,35 @@ def test_parse_claude_mcp_list_handles_http_and_stdio():
     assert by_name["serena"].spec.command.endswith("serena")
 
 
-def test_parse_ps_output_keeps_only_mcp_markers():
+def test_parse_ps_output_extracts_identity_and_classifies_parent():
+    # columns: pid ppid command  (matches `ps -o pid=,ppid=,command=`)
     text = (
-        "  123 /opt/homebrew/bin/node /x/personal-ops/app/dist/src/mcp-server.js\n"
-        "  124 /opt/homebrew/bin/node /x/personal-ops/app/dist/src/mcp-server.js\n"
-        "  456 /usr/bin/python3 -m some.other.thing\n"
-        "  789 npx -y @modelcontextprotocol/server-github\n"
-        "  790 /Applications/Claude.app/Contents/Helpers/disclaimer /opt/homebrew/bin/uv "
+        "  123  500 /opt/homebrew/bin/node /x/personal-ops/app/dist/src/mcp-server.js\n"
+        "  124  500 /opt/homebrew/bin/node /x/personal-ops/app/dist/src/mcp-server.js\n"
+        "  456    1 /usr/bin/python3 -m some.other.thing\n"
+        "  789 88920 npx -y @modelcontextprotocol/server-github\n"
+        "  790 82845 /Applications/Claude.app/Contents/Helpers/disclaimer /opt/homebrew/bin/uv "
         "--directory /x/Claude Extensions/cursortouch.macos-mcp run macos-mcp\n"
-        "  999 /usr/bin/shadow-mcp scan\n"
+        "  900    1 /opt/homebrew/bin/uv run --directory /x/notification-hub/mcp_server python server.py\n"
+        "  999  500 /usr/bin/shadow-mcp scan\n"
+        # host processes referenced as parents above:
+        "  500    1 /Applications/Codex.app/Contents/Resources/codex app-server\n"
+        "88920    1 claude --dangerously-skip-permissions\n"
+        "82845    1 /Applications/Claude.app/Contents/MacOS/Claude\n"
     )
     servers = parse_ps_output(text)
-    names = {s.name for s in servers}
-    # script path resolves to the project, not "mcp-server.js"
-    assert "personal-ops" in names
-    # `run macos-mcp` resolves to the package, not "disclaimer"/"application"
-    assert "macos-mcp" in names
-    assert "@modelcontextprotocol/server-github" in names
-    # no-marker python line and self line are dropped; duplicate PID collapses
-    assert "some.other.thing" not in names
-    assert not any("shadow" in n for n in names)
+    by_name = {s.name: s for s in servers}
+    # identity extraction
+    assert "personal-ops" in by_name  # script path -> project
+    assert "macos-mcp" in by_name  # `run macos-mcp` -> package
+    assert "@modelcontextprotocol/server-github" in by_name
+    assert "notification-hub" in by_name  # --directory -> project
+    assert "some.other.thing" not in by_name  # no marker
+    assert not any("shadow" in n for n in by_name)
     assert len([s for s in servers if s.name == "personal-ops"]) == 1
-    assert all(s.provenance.source == "process" for s in servers)
+    # parent classification: host-spawned vs standalone (the thread-1 signal)
+    assert by_name["personal-ops"].provenance.host_managed is True  # parent = codex
+    assert (
+        by_name["@modelcontextprotocol/server-github"].provenance.host_managed is True
+    )  # parent = claude
+    assert by_name["notification-hub"].provenance.host_managed is False  # ppid 1 = launchd

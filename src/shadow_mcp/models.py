@@ -50,6 +50,8 @@ class Provenance(BaseModel):
     scope: str = "user"  # user | project | profile | runtime | desktop
     declared_name: str
     enabled: Optional[bool] = None  # None = source doesn't express enable state
+    host_managed: Optional[bool] = None  # process-only: spawned by a known MCP host
+    parent: Optional[str] = None  # process-only: parent process command (provenance)
 
 
 class ServerSpec(BaseModel):
@@ -105,6 +107,13 @@ class InventoryEntry(BaseModel):
 
     @computed_field  # type: ignore[prop-decorator]
     @property
+    def standalone_process(self) -> bool:
+        """A live process NOT spawned by a known MCP host (a genuine rogue, not a
+        host/plugin-managed child)."""
+        return any(p.source == "process" and p.host_managed is False for p in self.provenances)
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
     def configured(self) -> bool:
         return any(p.source != "process" for p in self.provenances)
 
@@ -137,6 +146,8 @@ class McpTrustGrade(BaseModel):
     composite: Optional[float] = None
     slug: Optional[str] = None
     scanned_at: Optional[str] = None
+    computed: bool = False  # True = derived via mcp-trust grade() from MCPAudit dims,
+    #                         not a persisted registry scan
 
 
 Band = Literal["critical", "high", "medium", "low", "unknown"]

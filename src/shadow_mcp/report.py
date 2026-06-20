@@ -35,6 +35,15 @@ def build_report(
         key=lambda g: (-_BAND_RANK.get(g.risk.band, 0), g.entry.canonical_name.lower()),
     )
     notes = list(errors or [])
+    if any(g.risk.mcptrust and g.risk.mcptrust.computed for g in graded):
+        notes.append(
+            "Grades marked ~ are computed from MCPAudit static config-only "
+            "dimensions via mcp-trust grade(), not a connected scan. Low "
+            "transparency: a computed A means 'no capability risk detectable "
+            "from config', NOT 'verified safe'. The risk band (not the letter) "
+            "carries the differentiated signal — it folds in transport, secrets, "
+            "and blast radius."
+        )
     return Report(
         generated_at=generated_at,
         host=host,

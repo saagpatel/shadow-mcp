@@ -54,12 +54,15 @@ def assess(
         if top:
             reasons.append(f"high finding: {top['title']} [{top['category']}] (MCP03/MCP10)")
 
-    # mcp-trust authoritative danger letter raises the band.
-    if mcptrust and mcptrust.grade in ("D", "F"):
-        band = _bump(band) if band != "unknown" else "high"
-        reasons.append(f"mcp-trust danger grade {mcptrust.grade}")
-    elif mcptrust and mcptrust.grade not in (None, "unknown"):
-        reasons.append(f"mcp-trust grade {mcptrust.grade}")
+    # mcp-trust danger letter raises the band. A registry grade is authoritative;
+    # a computed grade is derived from MCPAudit dims via mcp-trust's grade() logic.
+    if mcptrust and mcptrust.grade not in (None, "unknown"):
+        origin = "computed" if mcptrust.computed else "registry"
+        if mcptrust.grade in ("D", "F"):
+            band = _bump(band) if band != "unknown" else "high"
+            reasons.append(f"mcp-trust danger grade {mcptrust.grade} ({origin})")
+        else:
+            reasons.append(f"mcp-trust grade {mcptrust.grade} ({origin})")
 
     # MCP07: network-reachable transport widens blast radius.
     if entry.spec.transport in ("http", "sse"):
@@ -79,7 +82,9 @@ def assess(
     headline = band.upper()
     extras = []
     if mcptrust and mcptrust.grade not in (None, "unknown"):
-        extras.append(f"mcp-trust {mcptrust.grade}")
+        # a trailing ~ marks a computed grade vs an authoritative registry one
+        mark = "~" if mcptrust.computed else ""
+        extras.append(f"trust {mcptrust.grade}{mark}")
     if mcpaudit and not mcpaudit.error:
         extras.append(f"cap {mcpaudit.composite:.1f}")
     if extras:

@@ -9,10 +9,12 @@ authors = [{ name = "Saagar Patel" }]
 dependencies = [
     "pydantic>=2",
     "rich>=13",
-    # Delegated grading engine (the static analyzer). Resolved to the local
-    # checkout via [tool.uv.sources] so we grade with *this machine's* engine,
-    # not a possibly-divergent PyPI build.
+    # Delegated grading engines, resolved to the local checkouts via
+    # [tool.uv.sources] so we grade with *this machine's* engines:
+    #   mcp-audits — the static capability analyzer (0-10 composite)
+    #   mcp-trust  — the A-F danger-grade logic (we call grade(), never write its DB)
     "mcp-audits>=2.2.0",
+    "mcp-trust",
 ]
 
 [project.optional-dependencies]
@@ -23,6 +25,7 @@ shadow-mcp = "shadow_mcp.cli:main"
 
 [tool.uv.sources]
 mcp-audits = { path = "../MCPAudit", editable = true }
+mcp-trust = { path = "../mcp-trust", editable = true }
 
 [build-system]
 requires = ["hatchling"]

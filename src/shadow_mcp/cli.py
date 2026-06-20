@@ -54,7 +54,8 @@ def _run_pipeline(args: argparse.Namespace, *, grade: bool):
         graded = grade_inventory(
             inventory,
             grading_paths=_grading_paths(args),
-            run_mcpaudit=not args.no_mcpaudit,
+            run_mcpaudit=not getattr(args, "no_mcpaudit", False),
+            compute_missing=not getattr(args, "no_compute", False),
         )
     else:
         graded = [
@@ -101,6 +102,34 @@ def cmd_discover(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_grade_missing(args: argparse.Namespace) -> int:
+    """Show servers the mcp-trust registry had no grade for, with a computed letter."""
+    report = _run_pipeline(args, grade=True)
+    computed = [g for g in report.servers if g.risk.mcptrust and g.risk.mcptrust.computed]
+    in_registry = [
+        g
+        for g in report.servers
+        if g.risk.mcptrust
+        and g.risk.mcptrust.grade not in ("unknown",)
+        and not g.risk.mcptrust.computed
+    ]
+    if args.format == "json":
+        payload = {
+            "computed": [g.model_dump(mode="json") for g in computed],
+            "in_registry": [g.entry.canonical_name for g in in_registry],
+        }
+        print(json.dumps(payload, indent=2))
+        return 0
+    print(
+        f"{len(in_registry)} server(s) graded by the mcp-trust registry; "
+        f"{len(computed)} computed from MCPAudit dimensions via mcp-trust grade():\n"
+    )
+    for g in sorted(computed, key=lambda g: g.risk.mcptrust.grade):
+        e = g.entry
+        print(f"  {g.risk.mcptrust.grade}  {e.canonical_name:28} ({','.join(e.sources)})")
+    return 0
+
+
 def cmd_sources(args: argparse.Namespace) -> int:
     paths = _discovery_paths(args)
     result = discover_all(
@@ -141,11 +170,25 @@ def build_parser() -> argparse.ArgumentParser:
     _add_common(p_scan)
     p_scan.add_argument("--no-mcpaudit", action="store_true", help="skip MCPAudit grading")
     p_scan.add_argument("--registry-db", help="path to mcp-trust registry.db")
+    p_scan.add_argument(
+        "--no-compute",
+        action="store_true",
+        help="don't compute a grade for servers the registry hasn't scanned",
+    )
     p_scan.set_defaults(func=cmd_scan)
 
     p_disc = sub.add_parser("discover", help="inventory only, no grading")
     _add_common(p_disc)
     p_disc.set_defaults(func=cmd_discover)
+
+    p_grade = sub.add_parser(
+        "grade-missing",
+        help="grade servers the mcp-trust registry has no scan for, via mcp-trust grade()",
+    )
+    _add_common(p_grade)
+    p_grade.add_argument("--no-mcpaudit", action="store_true", help="skip MCPAudit grading")
+    p_grade.add_argument("--registry-db", help="path to mcp-trust registry.db")
+    p_grade.set_defaults(func=cmd_grade_missing)
 
     p_src = sub.add_parser("sources", help="per-collector counts")
     _add_common(p_src)

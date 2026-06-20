@@ -85,6 +85,26 @@ This keeps the numeric grade delegated and explainable while letting the local
 layer (secrets, transport, provenance, governance) shape the final verdict with
 cited justification.
 
+## Registry vs computed A-F grades
+
+mcp-trust only stores grades for servers someone has already scanned and seeded
+(a handful). Every other discovered server gets a **computed** A-F letter: we
+feed MCPAudit's static dimensions into mcp-trust's own `grade()` (its danger
+weighting + critical cap), so the letter comes from mcp-trust's logic, not a
+reimplementation, and without writing to its database. Computed grades are
+marked with a trailing `~` and flagged `computed: true`.
+
+**Honest caveat (the transparency axis).** A computed grade is derived from
+*static config only* (no connection, no live tool enumeration), so for stdio
+servers launched via wrappers/npx, MCPAudit sees little and most letters land at
+**A**. Per mcp-trust's own transparency model, that is `transparency: low` —
+"cannot verify safe", **not** "verified safe". So a computed `A~` means "no
+capability risk detectable from config alone." The **band** (not the letter)
+carries the differentiated signal, because the band folds in the local OWASP
+layer (transport/MCP07, secrets/MCP01, blast radius/MCP09). A connected scan,
+which would populate the capability dimensions for real, is the network-scan
+expansion's job, not this tool's.
+
 ## Scale context (vendor-sourced, treat as directional)
 
 **[ESTABLISHED, vendor-sourced]** Wallarm 2026 reported 315 MCP-related vulns in

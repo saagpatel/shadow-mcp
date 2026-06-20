@@ -38,6 +38,23 @@ _MARKERS = (
     "-mcp.js",
 )
 _SELF_EXCLUDE = ("shadow-mcp", "shadow_mcp")
+# A parent process that means "this MCP server was spawned by a host/plugin"
+# (a managed child), not a standalone rogue daemon.
+_HOST_PARENT_MARKERS = (
+    "claude",
+    "codex",
+    "claude.app",
+    "codex.app",
+    "/disclaimer",
+    "cursor",
+    "windsurf",
+    "code helper",
+    "node_modules/.bin",
+    "npm exec",
+    "npx ",
+    "mcp-server",
+    "modelcontextprotocol",
+)
 # Path components that are scaffolding, not the project identity.
 _PATH_NOISE = {
     "app",
@@ -60,7 +77,7 @@ _PATH_NOISE = {
     "darwin",
 }
 
-_PID_RE = re.compile(r"^\s*(\d+)\s+(.*)$")
+_PID_RE = re.compile(r"^\s*(\d+)\s+(\d+)\s+(.*)$")
 _SCRIPT_RE = re.compile(r"(\S+mcp[-_]server\S*\.(?:js|mjs|ts|py))")
 _RUN_PKG_RE = re.compile(r"\b(?:npx|uvx|bunx)\s+(?:(?:-y|--yes)\s+)*(@?[\w./-]+)")
 _UV_RUN_RE = re.compile(r"\brun\s+(@?[\w./-]+)\s*$")
@@ -72,7 +89,7 @@ _BIN_MCP_RE = re.compile(r"(?:^|/)([\w.-]+-mcp(?:-server)?)\b")
 def _default_runner() -> tuple[int, str]:
     try:
         proc = subprocess.run(
-            ["ps", "-axww", "-o", "pid=,command="],
+            ["ps", "-axww", "-o", "pid=,ppid=,command="],
             capture_output=True,
             text=True,
             timeout=20,
@@ -80,6 +97,13 @@ def _default_runner() -> tuple[int, str]:
     except (OSError, subprocess.SubprocessError):
         return (1, "")
     return (proc.returncode, proc.stdout or "")
+
+
+def _is_host_parent(parent_cmd: str) -> bool:
+    low = parent_cmd.lower()
+    if not low:
+        return False  # unknown parent -> treat as standalone (worth attention)
+    return any(m in low for m in _HOST_PARENT_MARKERS)
 
 
 def _looks_like_mcp(cmdline: str) -> bool:
@@ -130,19 +154,29 @@ def extract_identity(cmdline: str) -> str | None:
 
 
 def parse_ps_output(text: str) -> list[DiscoveredServer]:
-    out: list[DiscoveredServer] = []
-    seen: set[str] = set()  # one sighting per identity (processes spawn many PIDs)
+    # First pass: map every pid -> command so we can resolve parents.
+    rows: list[tuple[str, str, str]] = []
+    pid_cmd: dict[str, str] = {}
     for line in text.splitlines():
         m = _PID_RE.match(line)
         if not m:
             continue
-        pid, cmdline = m.group(1), m.group(2).strip()
+        pid, ppid, cmdline = m.group(1), m.group(2), m.group(3).strip()
+        pid_cmd[pid] = cmdline
+        rows.append((pid, ppid, cmdline))
+
+    out: list[DiscoveredServer] = []
+    seen: set[str] = set()  # one sighting per identity (processes spawn many PIDs)
+    for pid, ppid, cmdline in rows:
         if not _looks_like_mcp(cmdline):
             continue
         name = extract_identity(cmdline)
         if not name or name in seen:
             continue
         seen.add(name)
+        parent_cmd = pid_cmd.get(ppid, "")
+        # launchd (pid 1) parent == standalone; otherwise classify by parent command
+        host_managed = False if ppid == "1" else _is_host_parent(parent_cmd)
         tokens = cmdline.split()
         spec = ServerSpec(
             transport="stdio",
@@ -158,6 +192,8 @@ def parse_ps_output(text: str) -> list[DiscoveredServer]:
                     location=f"ps:pid={pid}",
                     scope="runtime",
                     declared_name=name,
+                    host_managed=host_managed,
+                    parent=parent_cmd[:80] or None,
                 ),
             )
         )
