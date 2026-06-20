@@ -1,0 +1,36 @@
+[project]
+name = "shadow-mcp"
+version = "0.1.0"
+description = "Discover and risk-grade the MCP servers actually present on this machine. Local-first shadow-MCP inventory."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "Saagar Patel" }]
+dependencies = [
+    "pydantic>=2",
+    "rich>=13",
+    # Delegated grading engine (the static analyzer). Resolved to the local
+    # checkout via [tool.uv.sources] so we grade with *this machine's* engine,
+    # not a possibly-divergent PyPI build.
+    "mcp-audits>=2.2.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[project.scripts]
+shadow-mcp = "shadow_mcp.cli:main"
+
+[tool.uv.sources]
+mcp-audits = { path = "../MCPAudit", editable = true }
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/shadow_mcp"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
