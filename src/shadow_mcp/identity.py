@@ -23,27 +23,13 @@ PACKAGE_RUNNERS = {"npx", "bunx", "uvx", "pnpm", "yarn", "dlx"}
 LAUNCHERS = {"python", "python3", "uv", "uvx", "poetry", "pipx", "node", "bun", "deno"}
 # Shell shims to see through to the real first argument.
 SHIMS = {"sh", "bash", "zsh", "env", "exec"}
-# Script basenames too generic to be an identity on their own. Two different
-# project-local servers both launched as `node server.js` would collide on the
-# bare basename, so for these we keep the parent directory to disambiguate while
-# staying stable across hosts when the full path matches.
-GENERIC_SCRIPT_NAMES = {
-    "server.js",
-    "index.js",
-    "main.js",
-    "app.js",
-    "cli.js",
-    "server.mjs",
-    "index.mjs",
-    "server.py",
-    "main.py",
-    "app.py",
-    "cli.py",
-    "run.py",
-    "__main__.py",
-    "index.ts",
-    "server.ts",
-}
+# File extensions that mark a path as an interpreted script. A script's identity
+# is its *path*, not its bare basename: two different project-local `server.js`
+# servers are different servers, so any path ending in one of these is qualified
+# by its parent directory. Structural-by-extension rather than an enumerated name
+# list, so a script name nobody anticipated (`worker.js`, `handler.py`) is still
+# disambiguated and can never silently false-merge.
+SCRIPT_EXTS = (".js", ".mjs", ".cjs", ".ts", ".mts", ".py", ".rb", ".php", ".pl", ".sh")
 
 
 def normalize_name(name: str) -> str:
@@ -89,18 +75,19 @@ def _strip_version(pkg: str) -> str:
 
 
 def _script_token(path: str) -> str:
-    """Identity token for a script path.
+    """Identity token for a command/script path.
 
-    A distinctive basename (``portfolio-mcp.js``) is identity enough; a generic
-    one (``server.js``) is not, so we prefix it with the parent directory. This
-    prevents two different project-local servers from colliding while still
-    merging the same server seen across hosts when the full path matches.
+    A path that points at a script file is qualified by its parent directory, so
+    two different project-local ``server.js`` servers never collide on the bare
+    basename; the same server seen across hosts at the same path still matches,
+    and distinctively-named cross-host installs still merge via the inventory's
+    name union. A non-script executable keeps its (distinctive) basename.
     """
     p = path.strip().lower()
     base = os.path.basename(p)
-    if base in GENERIC_SCRIPT_NAMES:
+    if base.endswith(SCRIPT_EXTS):
         parent = os.path.basename(os.path.dirname(p))
-        if parent:
+        if parent and parent != ".":
             return f"{parent}/{base}"
     return base
 
@@ -165,9 +152,9 @@ def stdio_reference(spec: ServerSpec) -> str:
             return _script_token(script)
 
     if base:
-        # the reference may itself be a script path; disambiguate a generic basename
-        # (`/projA/server.js`) by its parent dir, otherwise the basename stands.
-        return _script_token(ref) if base in GENERIC_SCRIPT_NAMES else base
+        # the reference may itself be a script path; _script_token qualifies a
+        # script by its dir and leaves a distinctive binary basename untouched.
+        return _script_token(ref)
     script = _first_non_flag(args)
     return _script_token(script) if script else "unknown"
 
