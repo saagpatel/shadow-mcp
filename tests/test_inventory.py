@@ -116,5 +116,28 @@ def test_same_script_full_path_still_merges():
     assert entry.running and entry.configured
 
 
+def test_relative_config_merges_with_absolute_process():
+    # a config-relative `node ./mcp-server.js` and its absolute running form must
+    # collapse into one entry, not split into config + false running_unconfigured.
+    from shadow_mcp.collectors._common import parse_mcp_servers_block
+
+    cfg = parse_mcp_servers_block(
+        {"docs": {"command": "node", "args": ["./mcp-server.js"]}},
+        source="project_mcp_json",
+        location="/repo/.mcp.json",
+        scope="project",
+    )
+    proc = DiscoveredServer(
+        name="repo",
+        spec=ServerSpec(transport="stdio", command="node", args=["/repo/mcp-server.js"]),
+        provenance=Provenance(
+            source="process", location="ps", scope="runtime", declared_name="repo"
+        ),
+    )
+    entries = build_inventory(cfg + [proc])
+    assert len(entries) == 1
+    assert entries[0].running and entries[0].configured
+
+
 def test_empty_input():
     assert build_inventory([]) == []
