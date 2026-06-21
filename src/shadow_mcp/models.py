@@ -138,6 +138,9 @@ class McpAuditGrade(BaseModel):
     findings: list[dict] = Field(default_factory=list)  # {rule_id, severity, title, category}
     dimensions: dict[str, float] = Field(default_factory=dict)
     error: Optional[str] = None
+    connected: bool = False  # True = graded by spawning the server + enumerating tools
+    connection_status: Optional[str] = None  # connected | failed | skipped
+    tool_count: Optional[int] = None  # tools enumerated (connected path only)
 
 
 class McpTrustGrade(BaseModel):

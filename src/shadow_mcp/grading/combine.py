@@ -49,7 +49,14 @@ def assess(
             reasons.append(f"capability grade unavailable ({mcpaudit.error})")
     else:
         band = _band_from_composite(mcpaudit.composite)
-        reasons.append(f"MCPAudit capability composite {mcpaudit.composite:.1f}/10 (MCP02/MCP05)")
+        how = (
+            f"connected, {mcpaudit.tool_count} tools"
+            if mcpaudit.connected and mcpaudit.tool_count is not None
+            else ("connected" if mcpaudit.connected else "static config-only")
+        )
+        reasons.append(
+            f"MCPAudit capability composite {mcpaudit.composite:.1f}/10 [{how}] (MCP02/MCP05)"
+        )
         top = next((f for f in mcpaudit.findings if f["severity"] == "high"), None)
         if top:
             reasons.append(f"high finding: {top['title']} [{top['category']}] (MCP03/MCP10)")

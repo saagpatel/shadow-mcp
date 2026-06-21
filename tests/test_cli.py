@@ -63,6 +63,30 @@ def test_discover_skips_grading(fake_home, capsys, tmp_path):
     assert all(s["risk"]["headline"] == "ungraded" for s in data["servers"])
 
 
+def test_deep_scan_filters_to_named_servers(fake_home, capsys, tmp_path):
+    # --no-mcpaudit keeps it from actually spawning anything; we only assert the
+    # name filter narrows the inventory to the requested server.
+    rc = main(
+        [
+            "deep-scan",
+            "github",
+            "--home",
+            str(fake_home),
+            "--no-processes",
+            "--no-cli",
+            "--no-mcpaudit",
+            "--registry-db",
+            str(tmp_path / "absent.db"),
+            "--format",
+            "json",
+        ]
+    )
+    assert rc == 0
+    data = json.loads(capsys.readouterr().out)
+    names = {s["entry"]["canonical_name"] for s in data["servers"]}
+    assert names == {"github"}
+
+
 def test_sources_subcommand(fake_home, capsys):
     rc = main(["sources", "--home", str(fake_home), "--no-processes", "--no-cli"])
     assert rc == 0

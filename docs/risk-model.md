@@ -101,9 +101,16 @@ servers launched via wrappers/npx, MCPAudit sees little and most letters land at
 "cannot verify safe", **not** "verified safe". So a computed `A~` means "no
 capability risk detectable from config alone." The **band** (not the letter)
 carries the differentiated signal, because the band folds in the local OWASP
-layer (transport/MCP07, secrets/MCP01, blast radius/MCP09). A connected scan,
-which would populate the capability dimensions for real, is the network-scan
-expansion's job, not this tool's.
+layer (transport/MCP07, secrets/MCP01, blast radius/MCP09).
+
+**Connected grading (`--connect` / `deep-scan`).** To populate the capability
+dimensions for real, shadow-mcp can spawn a stdio server and enumerate its tools,
+delegating to MCPAudit's connected engine. This moves a server off the static
+`A` floor (a filesystem server connected-grades to `D`), so the computed letter
+becomes meaningful. It is opt-in because connecting executes the server; remote
+endpoints are never spawned (that is the network-scan tier), and a server that
+needs real secrets to start falls back to its static grade. A connected grade is
+flagged `connected: true` with the tool count in its reason line.
 
 ## Scale context (vendor-sourced, treat as directional)
 

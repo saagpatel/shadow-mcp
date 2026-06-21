@@ -6,6 +6,7 @@ from ..config import GradingPaths
 from ..models import GradedServer, InventoryEntry, McpTrustGrade
 from .combine import assess
 from .mcpaudit import grade_mcpaudit
+from .mcpaudit_connect import grade_mcpaudit_connected
 from .mcptrust import McpTrustGrader
 from .mcptrust_compute import compute_trust_grade
 
@@ -13,9 +14,18 @@ __all__ = [
     "grade_inventory",
     "assess",
     "grade_mcpaudit",
+    "grade_mcpaudit_connected",
     "McpTrustGrader",
     "compute_trust_grade",
 ]
+
+
+def _audit_for(entry: InventoryEntry, *, connect: bool, timeout: int):
+    # Connecting spawns the server, so only do it for enabled stdio servers;
+    # everything else (remote, disabled) stays on the static path.
+    if connect and not entry.disabled and entry.spec.transport in ("stdio", "unknown"):
+        return grade_mcpaudit_connected(entry.canonical_name, entry.spec, timeout=timeout)
+    return grade_mcpaudit(entry.canonical_name, entry.spec)
 
 
 def grade_inventory(
@@ -24,12 +34,18 @@ def grade_inventory(
     grading_paths: GradingPaths | None = None,
     run_mcpaudit: bool = True,
     compute_missing: bool = True,
+    connect: bool = False,
+    connect_timeout: int = 8,
 ) -> list[GradedServer]:
     trust = McpTrustGrader(grading_paths)
     try:
         graded: list[GradedServer] = []
         for entry in entries:
-            audit = grade_mcpaudit(entry.canonical_name, entry.spec) if run_mcpaudit else None
+            audit = (
+                _audit_for(entry, connect=connect, timeout=connect_timeout)
+                if run_mcpaudit
+                else None
+            )
             tg = trust.grade(entry)
             # Fill a registry gap with a grade computed from mcp-trust's own logic.
             # It is derived from MCPAudit's STATIC config-only dimensions, so its

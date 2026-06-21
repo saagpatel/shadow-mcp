@@ -42,7 +42,7 @@ def _grading_paths(args: argparse.Namespace) -> GradingPaths:
     return gp
 
 
-def _run_pipeline(args: argparse.Namespace, *, grade: bool):
+def _run_pipeline(args: argparse.Namespace, *, grade: bool, only: list[str] | None = None):
     paths = _discovery_paths(args)
     result = discover_all(
         paths,
@@ -50,12 +50,29 @@ def _run_pipeline(args: argparse.Namespace, *, grade: bool):
         include_cli=not args.no_cli,
     )
     inventory = build_inventory(result.servers)
+    if only:
+        wanted = {n.lower() for n in only}
+        inventory = [
+            e
+            for e in inventory
+            if e.canonical_name.lower() in wanted or any(a.lower() in wanted for a in e.aliases)
+        ]
     if grade:
+        connect = getattr(args, "connect", False)
+        if connect:
+            print(
+                "warning: --connect spawns each stdio MCP server to enumerate its "
+                "tools. Servers needing real secrets will fail to start and fall "
+                "back to their static grade.",
+                file=sys.stderr,
+            )
         graded = grade_inventory(
             inventory,
             grading_paths=_grading_paths(args),
             run_mcpaudit=not getattr(args, "no_mcpaudit", False),
             compute_missing=not getattr(args, "no_compute", False),
+            connect=connect,
+            connect_timeout=getattr(args, "connect_timeout", 8),
         )
     else:
         graded = [
@@ -98,6 +115,14 @@ def cmd_scan(args: argparse.Namespace) -> int:
 
 def cmd_discover(args: argparse.Namespace) -> int:
     report = _run_pipeline(args, grade=False)
+    _emit(report, args)
+    return 0
+
+
+def cmd_deep_scan(args: argparse.Namespace) -> int:
+    """Connect to (spawn) the named servers (or all), enumerate tools, grade."""
+    args.connect = True
+    report = _run_pipeline(args, grade=True, only=args.names or None)
     _emit(report, args)
     return 0
 
@@ -175,11 +200,33 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="don't compute a grade for servers the registry hasn't scanned",
     )
+    p_scan.add_argument(
+        "--connect",
+        action="store_true",
+        help="spawn each stdio server to grade its real tools (opt-in; executes servers)",
+    )
+    p_scan.add_argument(
+        "--connect-timeout", type=int, default=8, help="per-server connect timeout (s)"
+    )
     p_scan.set_defaults(func=cmd_scan)
 
     p_disc = sub.add_parser("discover", help="inventory only, no grading")
     _add_common(p_disc)
     p_disc.set_defaults(func=cmd_discover)
+
+    p_deep = sub.add_parser(
+        "deep-scan",
+        help="connect to (spawn) named servers (or all), enumerate tools, grade",
+    )
+    _add_common(p_deep)
+    p_deep.add_argument("names", nargs="*", help="server names to connect to (default: all stdio)")
+    p_deep.add_argument("--no-mcpaudit", action="store_true", help="skip MCPAudit grading")
+    p_deep.add_argument("--no-compute", action="store_true", help="skip computed grade fill")
+    p_deep.add_argument("--registry-db", help="path to mcp-trust registry.db")
+    p_deep.add_argument(
+        "--connect-timeout", type=int, default=10, help="per-server connect timeout (s)"
+    )
+    p_deep.set_defaults(func=cmd_deep_scan)
 
     p_grade = sub.add_parser(
         "grade-missing",

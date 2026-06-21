@@ -53,16 +53,33 @@ uv run shadow-mcp scan --json out.json      # machine-readable inventory
 uv run shadow-mcp scan --format markdown    # markdown report
 uv run shadow-mcp discover                  # inventory only, no grading
 uv run shadow-mcp sources                   # per-collector counts
+uv run shadow-mcp grade-missing             # A-F for servers the registry hasn't scanned
+uv run shadow-mcp deep-scan cost-tracker    # connect to a server, grade its real tools
 ```
 
 Useful flags: `--no-processes` (skip the live process scan), `--no-cli` (skip
 `claude mcp list`), `--no-mcpaudit` (inventory + mcp-trust only), `--home PATH`
 (point discovery at a fixture tree).
 
+### Static vs connected grading
+
+By default grading is **static** (config-only): no server is spawned, so grades
+reflect what's visible in the config. That's safe but coarse — a server's real
+capability only shows once you connect and list its tools.
+
+`shadow-mcp scan --connect` (or `deep-scan [names...]`) **spawns** each stdio
+server and enumerates its real tools, delegating to MCPAudit's connected engine
+for a capability grade that actually differentiates (a filesystem server jumps
+from a static `A` to a connected `D`). This is **opt-in** because connecting
+executes the server; remote endpoints are never spawned (that's the network-scan
+tier), and a server that needs real secrets to start falls back to its static
+grade.
+
 ## Safety
 
-- **Read-only.** Collectors parse configs and list processes; nothing they find
-  is ever mutated.
+- **Read-only discovery.** Collectors parse configs and list processes; nothing
+  they find is ever mutated. (`--connect`/`deep-scan` is the one path that
+  *executes* servers, and only when you explicitly ask.)
 - **Secrets stay out.** We record env variable *names* (to flag secret-bearing
   servers per MCP01) but never their values. A captured inventory still contains
   real local paths and hostnames, so treat `*.inventory.json` as private (it is

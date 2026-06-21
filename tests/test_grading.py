@@ -1,3 +1,4 @@
+import os
 import sqlite3
 
 import pytest
@@ -132,6 +133,46 @@ def test_compute_trust_grade_maps_dimensions_to_letter():
     # no usable audit -> no computed grade
     assert compute_trust_grade(None) is None
     assert compute_trust_grade(McpAuditGrade(composite=0.0, high_risk=False, error="x")) is None
+
+
+def test_connected_grade_never_spawns_remote_endpoints():
+    pytest.importorskip("mcp_audit")
+    from shadow_mcp.grading.mcpaudit_connect import grade_mcpaudit_connected
+
+    spec = ServerSpec(transport="http", url="https://example.invalid/mcp")
+    g = grade_mcpaudit_connected("remote", spec, timeout=2)
+    assert g.connected is False  # a remote endpoint is never spawned by a local tool
+
+
+def test_connected_grade_falls_back_when_server_wont_start():
+    pytest.importorskip("mcp_audit")
+    from shadow_mcp.grading.mcpaudit_connect import grade_mcpaudit_connected
+
+    spec = ServerSpec(transport="stdio", command="/nonexistent/shadow-mcp/nope")
+    g = grade_mcpaudit_connected("nope", spec, timeout=3)
+    # a server that won't start falls back to the static grade, never crashes
+    assert g.connected is False
+
+
+@pytest.mark.skipif(
+    not os.environ.get("SHADOW_MCP_RUN_CONNECT"),
+    reason="set SHADOW_MCP_RUN_CONNECT=1 to run the real-spawn connected scan (uses npx)",
+)
+def test_connected_scan_spawns_real_server_and_spreads_grade():
+    pytest.importorskip("mcp_audit")
+    from shadow_mcp.grading.mcpaudit_connect import grade_mcpaudit_connected
+    from shadow_mcp.grading.mcptrust_compute import compute_trust_grade
+
+    spec = ServerSpec(
+        transport="stdio",
+        command="npx",
+        args=["-y", "@modelcontextprotocol/server-filesystem", "/tmp"],
+    )
+    g = grade_mcpaudit_connected("filesystem", spec, timeout=30)
+    assert g.connection_status == "connected"
+    assert g.connected is True and g.composite > 0
+    # the connected dimensions push the computed letter off the static "A" floor
+    assert compute_trust_grade(g) in ("B", "C", "D", "F")
 
 
 def test_grade_inventory_fills_unknown_with_computed(trust_paths):

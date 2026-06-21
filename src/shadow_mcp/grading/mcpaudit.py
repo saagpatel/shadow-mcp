@@ -62,6 +62,27 @@ def _extract_findings(audit: dict) -> list[dict]:
     return out[:8]
 
 
+def audit_to_grade(audit: dict, *, connected: bool = False) -> McpAuditGrade:
+    """Parse one MCPAudit ServerAudit dict into our McpAuditGrade.
+
+    Shared by the static (config-only) and connected scan paths so both surface
+    the same shape.
+    """
+    rs = audit.get("risk_score") or {}
+    composite = float(rs.get("composite") or 0.0)
+    dims = {k: float(v) for k, v in rs.items() if k != "composite" and isinstance(v, (int, float))}
+    tools = audit.get("tools")
+    return McpAuditGrade(
+        composite=composite,
+        high_risk=composite >= 7.0,
+        findings=_extract_findings(audit),
+        dimensions=dims,
+        connected=connected,
+        connection_status=audit.get("connection_status"),
+        tool_count=len(tools) if isinstance(tools, list) else None,
+    )
+
+
 def grade_mcpaudit(name: str, spec: ServerSpec) -> McpAuditGrade:
     try:
         from mcp_audit.api import scan_config_only_dict
@@ -77,13 +98,4 @@ def grade_mcpaudit(name: str, spec: ServerSpec) -> McpAuditGrade:
     audits = report.get("audits") or []
     if not audits:
         return McpAuditGrade(composite=0.0, high_risk=False, error="no audit produced")
-    audit = audits[0]
-    rs = audit.get("risk_score") or {}
-    composite = float(rs.get("composite") or 0.0)
-    dims = {k: float(v) for k, v in rs.items() if k != "composite" and isinstance(v, (int, float))}
-    return McpAuditGrade(
-        composite=composite,
-        high_risk=composite >= 7.0,
-        findings=_extract_findings(audit),
-        dimensions=dims,
-    )
+    return audit_to_grade(audits[0], connected=False)
