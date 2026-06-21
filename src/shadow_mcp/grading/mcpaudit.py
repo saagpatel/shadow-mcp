@@ -8,7 +8,23 @@ discovery still works.
 
 from __future__ import annotations
 
+import contextlib
+import io
+
 from ..models import McpAuditGrade, ServerSpec
+
+
+@contextlib.contextmanager
+def muffle_stdout():
+    """Capture stdout written by the delegated engine.
+
+    MCPAudit prints a stray newline per scan (and connected-mode progress) to
+    stdout. shadow-mcp's stdout is its machine-readable deliverable (JSON /
+    markdown), so the engine's chatter must never reach it.
+    """
+    with contextlib.redirect_stdout(io.StringIO()):
+        yield
+
 
 # finding-list keys MCPAudit emits in the config-only path -> our category label
 _FINDING_KEYS = {
@@ -91,7 +107,8 @@ def grade_mcpaudit(name: str, spec: ServerSpec) -> McpAuditGrade:
 
     config = {"mcpServers": {name: _to_client_spec(spec)}}
     try:
-        report = scan_config_only_dict(config, redact=False)
+        with muffle_stdout():
+            report = scan_config_only_dict(config, redact=False)
     except Exception as exc:  # never let the engine break discovery
         return McpAuditGrade(composite=0.0, high_risk=False, error=f"{type(exc).__name__}: {exc}")
 

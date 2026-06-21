@@ -23,6 +23,27 @@ PACKAGE_RUNNERS = {"npx", "bunx", "uvx", "pnpm", "yarn", "dlx"}
 LAUNCHERS = {"python", "python3", "uv", "uvx", "poetry", "pipx", "node", "bun", "deno"}
 # Shell shims to see through to the real first argument.
 SHIMS = {"sh", "bash", "zsh", "env", "exec"}
+# Script basenames too generic to be an identity on their own. Two different
+# project-local servers both launched as `node server.js` would collide on the
+# bare basename, so for these we keep the parent directory to disambiguate while
+# staying stable across hosts when the full path matches.
+GENERIC_SCRIPT_NAMES = {
+    "server.js",
+    "index.js",
+    "main.js",
+    "app.js",
+    "cli.js",
+    "server.mjs",
+    "index.mjs",
+    "server.py",
+    "main.py",
+    "app.py",
+    "cli.py",
+    "run.py",
+    "__main__.py",
+    "index.ts",
+    "server.ts",
+}
 
 
 def normalize_name(name: str) -> str:
@@ -67,6 +88,23 @@ def _strip_version(pkg: str) -> str:
     return pkg.split("@", 1)[0]
 
 
+def _script_token(path: str) -> str:
+    """Identity token for a script path.
+
+    A distinctive basename (``portfolio-mcp.js``) is identity enough; a generic
+    one (``server.js``) is not, so we prefix it with the parent directory. This
+    prevents two different project-local servers from colliding while still
+    merging the same server seen across hosts when the full path matches.
+    """
+    p = path.strip().lower()
+    base = os.path.basename(p)
+    if base in GENERIC_SCRIPT_NAMES:
+        parent = os.path.basename(os.path.dirname(p))
+        if parent:
+            return f"{parent}/{base}"
+    return base
+
+
 def _first_non_flag(args: list[str]) -> str | None:
     for a in args:
         if a and not a.startswith("-"):
@@ -97,6 +135,9 @@ def stdio_reference(spec: ServerSpec) -> str:
     cmd = (spec.command or "").strip()
     base = os.path.basename(cmd).lower()
     args = list(spec.args)
+    # The path a generic-script token is derived from; advances past a shim so we
+    # disambiguate by the *real* script's dir, not the shell's ("sh").
+    ref = cmd
 
     # See through a shell shim: `sh -c "real ..."` or `env FOO=bar real ...`
     if base in SHIMS:
@@ -104,6 +145,7 @@ def stdio_reference(spec: ServerSpec) -> str:
         if nxt:
             base = os.path.basename(nxt).lower()
             args = args[args.index(nxt) + 1 :] if nxt in args else args
+            ref = nxt
 
     if base in PACKAGE_RUNNERS:
         pkg = _first_package(args)
@@ -120,12 +162,14 @@ def stdio_reference(spec: ServerSpec) -> str:
             return mod.lower()
         script = _first_non_flag([a for a in args if a not in PACKAGE_RUNNERS])
         if script:
-            return os.path.basename(script).lower()
+            return _script_token(script)
 
     if base:
-        return base
+        # the reference may itself be a script path; disambiguate a generic basename
+        # (`/projA/server.js`) by its parent dir, otherwise the basename stands.
+        return _script_token(ref) if base in GENERIC_SCRIPT_NAMES else base
     script = _first_non_flag(args)
-    return os.path.basename(script).lower() if script else "unknown"
+    return _script_token(script) if script else "unknown"
 
 
 def signature(spec: ServerSpec) -> str:

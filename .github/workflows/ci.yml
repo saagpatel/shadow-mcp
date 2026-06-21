@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.11
+
+      # shadow-mcp grades by delegating to sibling checkouts of the MCPAudit and
+      # mcp-trust engines (the `engines` dependency-group, path-sourced in
+      # pyproject.toml). Those checkouts don't exist in CI, so we skip that group:
+      # discovery + the local OWASP layer are fully exercised, and the engine-backed
+      # tests skip cleanly via importorskip.
+      - name: Sync (without local grading engines)
+        run: uv sync --no-group engines
+
+      # --no-sync: use the env built above. Without it, `uv run` re-syncs the
+      # default groups (which include `engines`) and fails on the missing local
+      # checkouts.
+      - name: Lint
+        run: uv run --no-sync ruff check .
+
+      - name: Test
+        run: uv run --no-sync pytest

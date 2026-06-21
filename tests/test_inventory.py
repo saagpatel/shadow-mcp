@@ -93,5 +93,28 @@ def test_disabled_only_when_all_states_disabled():
     assert entry2.disabled is False
 
 
+def test_distinct_script_servers_do_not_false_merge():
+    # two genuinely different servers in different projects, both `node server.js`,
+    # must stay separate — a discovery tool must never drop a server via false-merge.
+    discovered = [
+        _disc("alpha", "project_mcp_json", command="node", args=["/projA/server.js"]),
+        _disc("beta", "project_mcp_json", command="node", args=["/projB/server.js"]),
+    ]
+    entries = build_inventory(discovered)
+    assert len(entries) == 2
+    assert {e.canonical_name for e in entries} == {"alpha", "beta"}
+
+
+def test_same_script_full_path_still_merges():
+    # the same server seen in config and as a running process (identical full path)
+    # must still collapse into one entry.
+    discovered = [
+        _disc("alpha", "project_mcp_json", command="node", args=["/projA/server.js"]),
+        _disc("alpha", "process", command="node", args=["/projA/server.js"]),
+    ]
+    (entry,) = build_inventory(discovered)
+    assert entry.running and entry.configured
+
+
 def test_empty_input():
     assert build_inventory([]) == []

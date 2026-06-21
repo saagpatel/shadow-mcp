@@ -24,7 +24,7 @@ class DiscoveryPaths:
     project_glob_depth: int = 4  # cap recursion when hunting .mcp.json
 
     @classmethod
-    def default(cls, home: Path | None = None) -> "DiscoveryPaths":
+    def default(cls, home: Path | None = None) -> DiscoveryPaths:
         h = home or Path(os.environ.get("SHADOW_MCP_HOME", Path.home()))
         codex = h / ".codex"
         app_support = h / "Library" / "Application Support" / "Claude"
@@ -48,7 +48,7 @@ class GradingPaths:
     mcptrust_seed: Path
 
     @classmethod
-    def default(cls, home: Path | None = None) -> "GradingPaths":
+    def default(cls, home: Path | None = None) -> GradingPaths:
         h = home or Path.home()
         trust = Path(os.environ.get("SHADOW_MCP_MCPTRUST_DIR", h / "Projects" / "mcp-trust"))
         return cls(

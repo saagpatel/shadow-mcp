@@ -43,3 +43,36 @@ def test_plain_binary_uses_basename():
 def test_signature_distinguishes_url_and_command():
     assert signature(ServerSpec(transport="http", url="https://x.y/mcp")).startswith("url:")
     assert signature(_stdio("engraph", "serve")) == "cmd:engraph"
+
+
+def test_generic_script_name_keeps_parent_dir():
+    # a generic basename alone is not an identity: keep the parent dir so two
+    # different project-local `server.js` servers don't collide.
+    assert stdio_reference(_stdio("node", "/projA/server.js")) == "proja/server.js"
+    assert stdio_reference(_stdio("node", "/projB/server.js")) == "projb/server.js"
+
+
+def test_generic_script_distinct_dirs_have_distinct_signatures():
+    a = signature(_stdio("node", "/projA/server.js"))
+    b = signature(_stdio("node", "/projB/server.js"))
+    assert a != b
+
+
+def test_generic_direct_command_script_keeps_parent_dir():
+    # the script invoked directly as the command (no launcher) also disambiguates
+    assert stdio_reference(_stdio("/projA/main.py")) == "proja/main.py"
+
+
+def test_specific_script_name_stays_bare():
+    # a distinctive script name is already a good identity; don't path-qualify it
+    assert stdio_reference(_stdio("node", "/a/b/start.mjs")) == "start.mjs"
+
+
+def test_shim_wrapped_generic_script_disambiguates_by_dir():
+    # `sh -c "node /proj/server.js"` must resolve to the script's dir, not "sh";
+    # otherwise every shim-wrapped generic-script server collides on "cmd:sh".
+    a = stdio_reference(_stdio("sh", "-c", "node /projA/server.js"))
+    b = stdio_reference(_stdio("sh", "-c", "python /projB/main.py"))
+    assert a == "proja/server.js"
+    assert b == "projb/main.py"
+    assert a != b

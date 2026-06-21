@@ -14,8 +14,8 @@ static grade when a server won't start (e.g. it needs real secrets we don't have
 
 from __future__ import annotations
 
-from .mcpaudit import _to_client_spec, audit_to_grade, grade_mcpaudit
 from ..models import McpAuditGrade, ServerSpec
+from .mcpaudit import _to_client_spec, audit_to_grade, grade_mcpaudit, muffle_stdout
 
 _PASTED_SOURCE = "shadow-mcp:connect"
 
@@ -43,7 +43,8 @@ def _run_connected(name: str, spec: ServerSpec, timeout: int) -> dict | None:
             servers=servers,
         )
 
-    report = anyio.run(_scan)
+    with muffle_stdout():
+        report = anyio.run(_scan)
     audits = report.model_dump(mode="json").get("audits") or []
     return audits[0] if audits else None
 

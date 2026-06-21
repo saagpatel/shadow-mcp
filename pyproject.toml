@@ -6,19 +6,29 @@ readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
 authors = [{ name = "Saagar Patel" }]
+# Only true PyPI-resolvable runtime deps live here. The grading engines are
+# optional (imported via try/except; the tool degrades to discovery-only without
+# them), so they live in the `engines` dependency-group below rather than as hard
+# deps. That keeps CI installable without the local checkouts or PyPI publication.
 dependencies = [
     "pydantic>=2",
     "rich>=13",
-    # Delegated grading engines, resolved to the local checkouts via
-    # [tool.uv.sources] so we grade with *this machine's* engines:
-    #   mcp-audits — the static capability analyzer (0-10 composite)
-    #   mcp-trust  — the A-F danger-grade logic (we call grade(), never write its DB)
-    "mcp-audits>=2.2.0",
-    "mcp-trust",
 ]
 
-[project.optional-dependencies]
-dev = ["pytest>=8"]
+[dependency-groups]
+# `uv sync` installs the default-groups (see [tool.uv]) so a local clone grades
+# out of the box and can run the suite immediately.
+dev = ["pytest>=8", "ruff>=0.6"]
+# Delegated grading engines, resolved to this machine's local checkouts via
+# [tool.uv.sources]:
+#   mcp-audits — the static capability analyzer (0-10 composite)
+#   mcp-trust  — the A-F danger-grade logic (we call grade(), never write its DB)
+# CI installs without this group (`uv sync --no-group engines`); the engine-backed
+# tests skip cleanly via importorskip when the engines are absent.
+engines = ["mcp-audits>=2.2.0", "mcp-trust"]
+
+[tool.uv]
+default-groups = ["dev", "engines"]
 
 [project.scripts]
 shadow-mcp = "shadow_mcp.cli:main"
@@ -37,3 +47,16 @@ packages = ["src/shadow_mcp"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.ruff.lint.per-file-ignores]
+# Test fixtures reproduce real `ps`/CLI output lines verbatim; wrapping them
+# would corrupt the data under test.
+"tests/**" = ["E501"]

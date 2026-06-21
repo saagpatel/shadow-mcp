@@ -11,7 +11,7 @@ from __future__ import annotations
 import re
 import shutil
 import subprocess
-from typing import Callable
+from collections.abc import Callable
 
 from ..models import DiscoveredServer, Provenance, ServerSpec, Transport
 

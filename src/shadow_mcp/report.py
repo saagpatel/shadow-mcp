@@ -7,7 +7,7 @@ from collections import Counter
 from rich.console import Console
 from rich.table import Table
 
-from .models import GradedServer, Report, ShadowFinding
+from .models import GradedServer, Report
 from .shadow import build_shadow_findings
 
 _BAND_STYLE = {

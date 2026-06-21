@@ -75,6 +75,23 @@ executes the server; remote endpoints are never spawned (that's the network-scan
 tier), and a server that needs real secrets to start falls back to its static
 grade.
 
+## Development
+
+```bash
+uv sync                       # dev tools + grading engines (the default groups)
+uv run pytest                 # full suite (61 + engine-backed tests)
+uv run ruff check .           # lint
+```
+
+The grading engines are an optional `engines` dependency-group, resolved to your
+local checkouts of `../MCPAudit` and `../mcp-trust` via `[tool.uv.sources]`. The
+tool degrades to discovery-only without them (engine-backed tests skip cleanly),
+so CI installs without them:
+
+```bash
+uv sync --no-group engines    # discovery + local OWASP layer only (what CI runs)
+```
+
 ## Safety
 
 - **Read-only discovery.** Collectors parse configs and list processes; nothing

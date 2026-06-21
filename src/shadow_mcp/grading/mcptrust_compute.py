@@ -12,8 +12,6 @@ from __future__ import annotations
 
 from ..models import McpAuditGrade
 
-_DIMS = ("file_access", "network_access", "shell_execution", "destructive", "exfiltration")
-
 
 def compute_trust_grade(mcpaudit: McpAuditGrade | None) -> str | None:
     """Return an A-F letter via mcp-trust's grade(), or None if unavailable."""
