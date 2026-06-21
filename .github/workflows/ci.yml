@@ -23,17 +23,20 @@ jobs:
       - name: Set up Python
         run: uv python install 3.11
 
-      # shadow-mcp grades by delegating to sibling checkouts of the MCPAudit and
-      # mcp-trust engines (the `engines` dependency-group, path-sourced in
-      # pyproject.toml). Those checkouts don't exist in CI, so we skip that group:
-      # discovery + the local OWASP layer are fully exercised, and the engine-backed
-      # tests skip cleanly via importorskip.
-      - name: Sync (without local grading engines)
-        run: uv sync --no-group engines
+      # shadow-mcp grades by delegating to local sibling checkouts of the MCPAudit
+      # and mcp-trust engines (the path-sourced `engines` group). Those don't exist
+      # in CI, and `uv sync` builds the editable path-sources even when the group is
+      # deselected. So install the package with --no-deps plus the runtime + dev
+      # tools it needs; discovery + the local OWASP layer are fully exercised and the
+      # engine-backed tests skip cleanly via importorskip.
+      - name: Install (without local grading engines)
+        run: |
+          uv venv
+          uv pip install pydantic rich pytest ruff
+          uv pip install --no-deps -e .
 
-      # --no-sync: use the env built above. Without it, `uv run` re-syncs the
-      # default groups (which include `engines`) and fails on the missing local
-      # checkouts.
+      # --no-sync: run against the env built above; never trigger an auto-sync that
+      # would try to resolve the missing engine path-sources.
       - name: Lint
         run: uv run --no-sync ruff check .
 
