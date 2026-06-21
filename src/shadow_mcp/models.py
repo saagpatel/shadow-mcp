@@ -7,7 +7,7 @@ inventory, the JSON deliverable, or a log line.
 
 from __future__ import annotations
 
-from typing import Literal, Optional
+from typing import Literal
 
 from pydantic import BaseModel, Field, computed_field, model_validator
 
@@ -49,22 +49,22 @@ class Provenance(BaseModel):
     location: str  # file path, "claude mcp list", or "ps"
     scope: str = "user"  # user | project | profile | runtime | desktop
     declared_name: str
-    enabled: Optional[bool] = None  # None = source doesn't express enable state
-    host_managed: Optional[bool] = None  # process-only: spawned by a known MCP host
-    parent: Optional[str] = None  # process-only: parent process command (provenance)
+    enabled: bool | None = None  # None = source doesn't express enable state
+    host_managed: bool | None = None  # process-only: spawned by a known MCP host
+    parent: str | None = None  # process-only: parent process command (provenance)
 
 
 class ServerSpec(BaseModel):
     """A normalized, redacted server specification."""
 
     transport: Transport = "stdio"
-    command: Optional[str] = None
+    command: str | None = None
     args: list[str] = Field(default_factory=list)
-    url: Optional[str] = None
+    url: str | None = None
     env_keys: list[str] = Field(default_factory=list)  # NAMES only, never values
 
     @model_validator(mode="after")
-    def _scrub_inline_secrets(self) -> "ServerSpec":
+    def _scrub_inline_secrets(self) -> ServerSpec:
         """Single chokepoint: no inline secret in args/url ever reaches storage."""
         if self.args:
             self.args = scrub_args(self.args)
@@ -137,18 +137,18 @@ class McpAuditGrade(BaseModel):
     high_risk: bool  # composite >= 7.0
     findings: list[dict] = Field(default_factory=list)  # {rule_id, severity, title, category}
     dimensions: dict[str, float] = Field(default_factory=dict)
-    error: Optional[str] = None
+    error: str | None = None
     connected: bool = False  # True = graded by spawning the server + enumerating tools
-    connection_status: Optional[str] = None  # connected | failed | skipped
-    tool_count: Optional[int] = None  # tools enumerated (connected path only)
+    connection_status: str | None = None  # connected | failed | skipped
+    tool_count: int | None = None  # tools enumerated (connected path only)
 
 
 class McpTrustGrade(BaseModel):
     grade: str  # "A".."F" or "unknown"
-    transparency: Optional[str] = None  # high | medium | low
-    composite: Optional[float] = None
-    slug: Optional[str] = None
-    scanned_at: Optional[str] = None
+    transparency: str | None = None  # high | medium | low
+    composite: float | None = None
+    slug: str | None = None
+    scanned_at: str | None = None
     computed: bool = False  # True = derived via mcp-trust grade() from MCPAudit dims,
     #                         not a persisted registry scan
 
@@ -159,8 +159,8 @@ Band = Literal["critical", "high", "medium", "low", "unknown"]
 class RiskAssessment(BaseModel):
     band: Band
     headline: str
-    mcpaudit: Optional[McpAuditGrade] = None
-    mcptrust: Optional[McpTrustGrade] = None
+    mcpaudit: McpAuditGrade | None = None
+    mcptrust: McpTrustGrade | None = None
     reasons: list[str] = Field(default_factory=list)
 
 
@@ -172,7 +172,9 @@ class GradedServer(BaseModel):
 class ShadowFinding(BaseModel):
     """A delta worth the operator's attention (the 'shadow' layer)."""
 
-    kind: str  # running_unconfigured | broad_blast_radius | ungraded_capable | disabled_present | adversarial_fixture
+    # kind: running_unconfigured | host_spawned_unconfigured | broad_blast_radius
+    #       | ungraded_capable | disabled_present | adversarial_fixture
+    kind: str
     server: str
     detail: str
     band: Band = "medium"

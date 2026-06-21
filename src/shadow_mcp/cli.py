@@ -15,7 +15,7 @@ import argparse
 import json
 import socket
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from .collectors import discover_all
@@ -27,7 +27,7 @@ from .report import build_report, render_markdown, render_terminal
 
 
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+    return datetime.now(UTC).isoformat(timespec="seconds")
 
 
 def _discovery_paths(args: argparse.Namespace) -> DiscoveryPaths:

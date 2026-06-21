@@ -8,7 +8,7 @@ distinct registration surface from the ``mcpServers`` block.
 from __future__ import annotations
 
 from ..config import DiscoveryPaths
-from ..models import DiscoveredServer, Provenance, Transport
+from ..models import DiscoveredServer, Provenance
 from ._common import infer_spec, load_json
 
 SOURCE = "dxt"

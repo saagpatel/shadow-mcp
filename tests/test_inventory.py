@@ -93,5 +93,51 @@ def test_disabled_only_when_all_states_disabled():
     assert entry2.disabled is False
 
 
+def test_distinct_script_servers_do_not_false_merge():
+    # two genuinely different servers in different projects, both `node server.js`,
+    # must stay separate — a discovery tool must never drop a server via false-merge.
+    discovered = [
+        _disc("alpha", "project_mcp_json", command="node", args=["/projA/server.js"]),
+        _disc("beta", "project_mcp_json", command="node", args=["/projB/server.js"]),
+    ]
+    entries = build_inventory(discovered)
+    assert len(entries) == 2
+    assert {e.canonical_name for e in entries} == {"alpha", "beta"}
+
+
+def test_same_script_full_path_still_merges():
+    # the same server seen in config and as a running process (identical full path)
+    # must still collapse into one entry.
+    discovered = [
+        _disc("alpha", "project_mcp_json", command="node", args=["/projA/server.js"]),
+        _disc("alpha", "process", command="node", args=["/projA/server.js"]),
+    ]
+    (entry,) = build_inventory(discovered)
+    assert entry.running and entry.configured
+
+
+def test_relative_config_merges_with_absolute_process():
+    # a config-relative `node ./mcp-server.js` and its absolute running form must
+    # collapse into one entry, not split into config + false running_unconfigured.
+    from shadow_mcp.collectors._common import parse_mcp_servers_block
+
+    cfg = parse_mcp_servers_block(
+        {"docs": {"command": "node", "args": ["./mcp-server.js"]}},
+        source="project_mcp_json",
+        location="/repo/.mcp.json",
+        scope="project",
+    )
+    proc = DiscoveredServer(
+        name="repo",
+        spec=ServerSpec(transport="stdio", command="node", args=["/repo/mcp-server.js"]),
+        provenance=Provenance(
+            source="process", location="ps", scope="runtime", declared_name="repo"
+        ),
+    )
+    entries = build_inventory(cfg + [proc])
+    assert len(entries) == 1
+    assert entries[0].running and entries[0].configured
+
+
 def test_empty_input():
     assert build_inventory([]) == []

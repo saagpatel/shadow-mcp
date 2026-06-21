@@ -28,3 +28,10 @@ def test_filesystem_server_scores_above_zero():
 def test_engine_never_raises_on_minimal_spec():
     grade = grade_mcpaudit("bare", ServerSpec(transport="stdio", command="true"))
     assert grade.error is None or "composite" in grade.model_dump()
+
+
+def test_grading_does_not_pollute_stdout(capsys):
+    # The engine writes a stray newline to stdout per scan; shadow-mcp's stdout is
+    # the machine-readable deliverable (JSON/markdown) and must stay clean.
+    grade_mcpaudit("x", ServerSpec(transport="stdio", command="true"))
+    assert capsys.readouterr().out == ""

@@ -1,8 +1,42 @@
 from shadow_mcp.collectors import discover_all
+from shadow_mcp.collectors._common import parse_mcp_servers_block
 from shadow_mcp.collectors.claude_cli import parse_claude_mcp_list
 from shadow_mcp.collectors.claude_code import ClaudeCodeCollector
 from shadow_mcp.collectors.codex import CodexCollector
 from shadow_mcp.collectors.processes import parse_ps_output
+
+
+def test_relative_script_path_resolved_against_config_dir():
+    # `node ./mcp-server.js` in /repo/.mcp.json must canonicalize to the absolute
+    # path so it matches the same server seen as an absolute path in the process
+    # table (otherwise it false-splits into a config entry + a "rogue" process).
+    servers = parse_mcp_servers_block(
+        {"docs": {"command": "node", "args": ["./mcp-server.js"]}},
+        source="project_mcp_json",
+        location="/repo/.mcp.json",
+        scope="project",
+    )
+    assert servers[0].spec.args == ["/repo/mcp-server.js"]
+
+
+def test_relative_command_path_resolved_against_config_dir():
+    servers = parse_mcp_servers_block(
+        {"docs": {"command": "./bin/server.py"}},
+        source="project_mcp_json",
+        location="/repo/.mcp.json",
+        scope="project",
+    )
+    assert servers[0].spec.command == "/repo/bin/server.py"
+
+
+def test_absolute_and_non_path_args_left_untouched():
+    servers = parse_mcp_servers_block(
+        {"x": {"command": "npx", "args": ["-y", "@scope/pkg", "/abs/keep.js"]}},
+        source="project_mcp_json",
+        location="/repo/.mcp.json",
+        scope="project",
+    )
+    assert servers[0].spec.args == ["-y", "@scope/pkg", "/abs/keep.js"]
 
 
 def test_claude_code_collector_redacts_env_to_keys(fake_paths):

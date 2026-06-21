@@ -23,6 +23,13 @@ PACKAGE_RUNNERS = {"npx", "bunx", "uvx", "pnpm", "yarn", "dlx"}
 LAUNCHERS = {"python", "python3", "uv", "uvx", "poetry", "pipx", "node", "bun", "deno"}
 # Shell shims to see through to the real first argument.
 SHIMS = {"sh", "bash", "zsh", "env", "exec"}
+# File extensions that mark a path as an interpreted script. A script's identity
+# is its *path*, not its bare basename: two different project-local `server.js`
+# servers are different servers, so any path ending in one of these is qualified
+# by its parent directory. Structural-by-extension rather than an enumerated name
+# list, so a script name nobody anticipated (`worker.js`, `handler.py`) is still
+# disambiguated and can never silently false-merge.
+SCRIPT_EXTS = (".js", ".mjs", ".cjs", ".ts", ".mts", ".py", ".rb", ".php", ".pl", ".sh")
 
 
 def normalize_name(name: str) -> str:
@@ -67,6 +74,24 @@ def _strip_version(pkg: str) -> str:
     return pkg.split("@", 1)[0]
 
 
+def _script_token(path: str) -> str:
+    """Identity token for a command/script path.
+
+    A path that points at a script file is qualified by its parent directory, so
+    two different project-local ``server.js`` servers never collide on the bare
+    basename; the same server seen across hosts at the same path still matches,
+    and distinctively-named cross-host installs still merge via the inventory's
+    name union. A non-script executable keeps its (distinctive) basename.
+    """
+    p = path.strip().lower()
+    base = os.path.basename(p)
+    if base.endswith(SCRIPT_EXTS):
+        parent = os.path.basename(os.path.dirname(p))
+        if parent and parent != ".":
+            return f"{parent}/{base}"
+    return base
+
+
 def _first_non_flag(args: list[str]) -> str | None:
     for a in args:
         if a and not a.startswith("-"):
@@ -97,6 +122,9 @@ def stdio_reference(spec: ServerSpec) -> str:
     cmd = (spec.command or "").strip()
     base = os.path.basename(cmd).lower()
     args = list(spec.args)
+    # The path a generic-script token is derived from; advances past a shim so we
+    # disambiguate by the *real* script's dir, not the shell's ("sh").
+    ref = cmd
 
     # See through a shell shim: `sh -c "real ..."` or `env FOO=bar real ...`
     if base in SHIMS:
@@ -104,6 +132,7 @@ def stdio_reference(spec: ServerSpec) -> str:
         if nxt:
             base = os.path.basename(nxt).lower()
             args = args[args.index(nxt) + 1 :] if nxt in args else args
+            ref = nxt
 
     if base in PACKAGE_RUNNERS:
         pkg = _first_package(args)
@@ -120,12 +149,14 @@ def stdio_reference(spec: ServerSpec) -> str:
             return mod.lower()
         script = _first_non_flag([a for a in args if a not in PACKAGE_RUNNERS])
         if script:
-            return os.path.basename(script).lower()
+            return _script_token(script)
 
     if base:
-        return base
+        # the reference may itself be a script path; _script_token qualifies a
+        # script by its dir and leaves a distinctive binary basename untouched.
+        return _script_token(ref)
     script = _first_non_flag(args)
-    return os.path.basename(script).lower() if script else "unknown"
+    return _script_token(script) if script else "unknown"
 
 
 def signature(spec: ServerSpec) -> str:
