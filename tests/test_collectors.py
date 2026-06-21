@@ -87,3 +87,23 @@ def test_parse_ps_output_extracts_identity_and_classifies_parent():
         by_name["@modelcontextprotocol/server-github"].provenance.host_managed is True
     )  # parent = claude
     assert by_name["notification-hub"].provenance.host_managed is False  # ppid 1 = launchd
+
+
+def test_parse_ps_output_climbs_past_launchers_to_real_owner():
+    # The real Hermes case: the MCP process's immediate parent is a `uv run`
+    # launcher shim; the actual owner (the Hermes gateway) is one hop up. We must
+    # climb past the shim and recognize Hermes, not flag a managed server as rogue.
+    text = (
+        "  600  650 /opt/homebrew/bin/uv run --directory /x/notification-hub/mcp_server python server.py\n"
+        "  650  660 /opt/homebrew/bin/uv run --frozen wrapper\n"  # launcher shim, climb past
+        "  660    1 /Users/dev/.hermes/hermes-agent/venv/bin/python -m hermes_cli.main gateway run\n"
+        # a genuinely standalone server (launchd-direct, no host ancestor)
+        "  700    1 /opt/homebrew/bin/uv run --directory /x/rogue-thing/mcp_server python server.py\n"
+    )
+    servers = parse_ps_output(text)
+    by_name = {s.name: s for s in servers}
+    # Hermes-owned server is correctly host-managed (not a rogue)
+    assert by_name["notification-hub"].provenance.host_managed is True
+    assert "hermes" in (by_name["notification-hub"].provenance.parent or "").lower()
+    # the launchd-direct one stays standalone
+    assert by_name["rogue-thing"].provenance.host_managed is False

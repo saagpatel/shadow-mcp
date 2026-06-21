@@ -54,7 +54,29 @@ _HOST_PARENT_MARKERS = (
     "npx ",
     "mcp-server",
     "modelcontextprotocol",
+    # agent gateways/clients that spawn MCP servers but aren't config-enumerated
+    "hermes",
+    "hermes_cli",
+    ".hermes/",
 )
+# Launcher shims that wrap the real owner (`uv run python ...`, `npx ...`, a
+# shell). The real client is one or more levels up, so we climb past these to
+# find who actually owns the MCP process before deciding it's a rogue.
+_LAUNCHER_BASENAMES = {
+    "uv",
+    "uvx",
+    "npx",
+    "npm",
+    "pnpm",
+    "bunx",
+    "yarn",
+    "sh",
+    "bash",
+    "zsh",
+    "env",
+    "login",
+    "exec",
+}
 # Path components that are scaffolding, not the project identity.
 _PATH_NOISE = {
     "app",
@@ -106,6 +128,38 @@ def _is_host_parent(parent_cmd: str) -> bool:
     return any(m in low for m in _HOST_PARENT_MARKERS)
 
 
+def _executable_basename(cmd: str) -> str:
+    toks = cmd.split()
+    return toks[0].rsplit("/", 1)[-1].lower() if toks else ""
+
+
+def _resolve_owner(ppid: str, pid_cmd: dict[str, str], pid_ppid: dict[str, str]) -> tuple[str, str]:
+    """Climb past launcher shims (`uv run`, `npx`, a shell) to the real owner.
+
+    A server spawned by Hermes shows an immediate parent of ``uv run ...``; the
+    actual client is one or more hops up. We follow the chain past known
+    launchers so an agent-managed server isn't mistaken for a standalone rogue.
+    """
+    cur = ppid
+    seen: set[str] = set()
+    depth = 0
+    while cur and cur not in seen and depth < 10:
+        seen.add(cur)
+        cmd = pid_cmd.get(cur, "")
+        if cur == "1":
+            return cur, cmd  # launchd: a true standalone
+        base = _executable_basename(cmd)
+        if base in _LAUNCHER_BASENAMES or "disclaimer" in cmd.lower():
+            nxt = pid_ppid.get(cur)
+            if not nxt:
+                return cur, cmd
+            cur = nxt
+            depth += 1
+            continue
+        return cur, cmd
+    return cur, pid_cmd.get(cur, "")
+
+
 def _looks_like_mcp(cmdline: str) -> bool:
     low = cmdline.lower()
     if any(s in low for s in _SELF_EXCLUDE):
@@ -154,15 +208,17 @@ def extract_identity(cmdline: str) -> str | None:
 
 
 def parse_ps_output(text: str) -> list[DiscoveredServer]:
-    # First pass: map every pid -> command so we can resolve parents.
+    # First pass: map pid -> command and pid -> ppid so we can walk parent chains.
     rows: list[tuple[str, str, str]] = []
     pid_cmd: dict[str, str] = {}
+    pid_ppid: dict[str, str] = {}
     for line in text.splitlines():
         m = _PID_RE.match(line)
         if not m:
             continue
         pid, ppid, cmdline = m.group(1), m.group(2), m.group(3).strip()
         pid_cmd[pid] = cmdline
+        pid_ppid[pid] = ppid
         rows.append((pid, ppid, cmdline))
 
     out: list[DiscoveredServer] = []
@@ -174,9 +230,9 @@ def parse_ps_output(text: str) -> list[DiscoveredServer]:
         if not name or name in seen:
             continue
         seen.add(name)
-        parent_cmd = pid_cmd.get(ppid, "")
-        # launchd (pid 1) parent == standalone; otherwise classify by parent command
-        host_managed = False if ppid == "1" else _is_host_parent(parent_cmd)
+        # Resolve the real owner past any launcher shims, then classify on it.
+        owner_pid, parent_cmd = _resolve_owner(ppid, pid_cmd, pid_ppid)
+        host_managed = False if owner_pid == "1" else _is_host_parent(parent_cmd)
         tokens = cmdline.split()
         spec = ServerSpec(
             transport="stdio",
