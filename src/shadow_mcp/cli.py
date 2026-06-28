@@ -155,6 +155,14 @@ def cmd_grade_missing(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_mcp_serve(args: argparse.Namespace) -> int:
+    """Run shadow-mcp as an MCP server over stdio."""
+    from . import mcp_server
+
+    mcp_server.run()
+    return 0
+
+
 def cmd_sources(args: argparse.Namespace) -> int:
     paths = _discovery_paths(args)
     result = discover_all(
@@ -240,6 +248,9 @@ def build_parser() -> argparse.ArgumentParser:
     p_src = sub.add_parser("sources", help="per-collector counts")
     _add_common(p_src)
     p_src.set_defaults(func=cmd_sources)
+
+    p_mcp = sub.add_parser("mcp-serve", help="run as an MCP server over stdio")
+    p_mcp.set_defaults(func=cmd_mcp_serve)
 
     return parser
 

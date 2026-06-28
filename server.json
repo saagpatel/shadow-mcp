@@ -1,0 +1,22 @@
+{
+	"$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+	"name": "io.github.saagpatel/shadow-mcp",
+	"title": "shadow-mcp",
+	"description": "Local MCP server that inventories and risk-grades MCP servers configured on this machine.",
+	"repository": {
+		"url": "https://github.com/saagpatel/shadow-mcp",
+		"source": "github"
+	},
+	"version": "0.1.0",
+	"packages": [
+		{
+			"registryType": "pypi",
+			"registryBaseUrl": "https://pypi.org",
+			"identifier": "shadow-mcp",
+			"version": "0.1.0",
+			"runtimeHint": "uvx",
+			"transport": { "type": "stdio" },
+			"packageArguments": [{ "type": "positional", "value": "mcp-serve" }]
+		}
+	]
+}
