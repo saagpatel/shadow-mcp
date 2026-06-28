@@ -6,38 +6,26 @@ readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
 authors = [{ name = "Saagar Patel" }]
-# Only true PyPI-resolvable runtime deps live here. The grading engines are
-# optional (imported via try/except; the tool degrades to discovery-only without
-# them), so they live in the `engines` dependency-group below rather than as hard
-# deps. That keeps CI installable without the local checkouts or PyPI publication.
 dependencies = [
     "pydantic>=2",
     "rich>=13",
     "mcp>=1.27.0,<2",
-    # TODO(publish): when mcp-audits + mcp-trust ship to PyPI, move them here from [engines] extra
+    # Grading engines, resolved from PyPI. mcp-audits provides the static
+    # capability analyzer (mcp_audit.api.scan_config_only_dict); mcp-trust
+    # provides the A-F danger-grade logic (mcp_trust.core.grading.grade). Both
+    # are imported lazily (try/except ImportError) so a partial install degrades
+    # to discovery-only rather than crashing — but a normal `uvx shadow-mcp`
+    # install pulls them from PyPI and grades fully. The mcp cap stays <2 so a
+    # fresh uvx resolve can't pull a v2 alpha that breaks the FastMCP API.
+    "mcp-audits>=2.2.3",
+    "mcp-trust>=0.1.0",
 ]
 
 [dependency-groups]
-# `uv sync` installs the default-groups (see [tool.uv]) so a local clone grades
-# out of the box and can run the suite immediately.
 dev = ["pytest>=8", "ruff>=0.6"]
-# Delegated grading engines, resolved to this machine's local checkouts via
-# [tool.uv.sources]:
-#   mcp-audits — the static capability analyzer (0-10 composite)
-#   mcp-trust  — the A-F danger-grade logic (we call grade(), never write its DB)
-# CI installs without this group (`uv sync --no-group engines`); the engine-backed
-# tests skip cleanly via importorskip when the engines are absent.
-engines = ["mcp-audits>=2.2.0", "mcp-trust"]
-
-[tool.uv]
-default-groups = ["dev", "engines"]
 
 [project.scripts]
 shadow-mcp = "shadow_mcp.cli:main"
-
-[tool.uv.sources]
-mcp-audits = { path = "../MCPAudit", editable = true }
-mcp-trust = { path = "../mcp-trust", editable = true }
 
 [build-system]
 requires = ["hatchling"]
