@@ -32,7 +32,7 @@ jobs:
       - name: Install (without local grading engines)
         run: |
           uv venv
-          uv pip install pydantic rich pytest ruff
+          uv pip install pydantic rich "mcp>=1.27.0,<2" pytest ruff
           uv pip install --no-deps -e .
 
       # --no-sync: run against the env built above; never trigger an auto-sync that

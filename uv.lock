@@ -359,7 +359,7 @@ wheels = [
 
 [[package]]
 name = "mcp-audits"
-version = "2.2.0"
+version = "2.2.1"
 source = { editable = "../MCPAudit" }
 dependencies = [
     { name = "anyio" },
@@ -913,6 +913,7 @@ name = "shadow-mcp"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "mcp" },
     { name = "pydantic" },
     { name = "rich" },
 ]
@@ -929,6 +930,7 @@ engines = [
 
 [package.metadata]
 requires-dist = [
+    { name = "mcp", specifier = ">=1.27.0,<2" },
     { name = "pydantic", specifier = ">=2" },
     { name = "rich", specifier = ">=13" },
 ]

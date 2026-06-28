@@ -1,4 +1,5 @@
 # shadow-mcp
+<!-- mcp-name: io.github.saagpatel/shadow-mcp -->
 
 Discover and risk-grade the MCP servers actually present on **this** machine.
 
@@ -101,6 +102,34 @@ uv sync --no-group engines    # discovery + local OWASP layer only (what CI runs
   servers per MCP01) but never their values. A captured inventory still contains
   real local paths and hostnames, so treat `*.inventory.json` as private (it is
   git-ignored by default).
+
+## Use as an MCP server
+
+shadow-mcp can serve its own inventory tools as an MCP server so an agent can
+query your local MCP surface without leaving the conversation.
+
+### Tools
+
+| Tool | Description |
+|---|---|
+| `scan_local` | Full pipeline (discover → inventory → grade → report). Returns JSON. |
+| `discover_local` | Inventory every MCP server without grading. Returns JSON. |
+| `deep_scan` | Grade only the named servers (static, no spawning). Accepts `names: list[str]`. Returns JSON. |
+| `list_sources` | Per-collector source counts from a discover run. Returns JSON. |
+
+### Run the server
+
+```bash
+# directly from a local checkout
+shadow-mcp mcp-serve
+
+# via uvx (once published to PyPI)
+uvx shadow-mcp mcp-serve
+```
+
+**LOCAL only.** The MCP server never connects to hosted MCP endpoints — all
+grading is static (config-based). `connect=False` is enforced unconditionally;
+no server is ever spawned from an MCP tool call.
 
 ## Scope
 
