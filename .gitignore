@@ -1,6 +1,10 @@
 __pycache__/
 *.pyc
 .venv/
+# shadow-mcp is a published library: consumers (and `uvx`) resolve deps fresh
+# from PyPI, so we don't pin a lock. The old committed lock encoded editable
+# local path-sources (../MCPAudit) that only resolved on one machine anyway.
+uv.lock
 .pytest_cache/
 *.egg-info/
 dist/

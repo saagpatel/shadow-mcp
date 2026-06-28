@@ -23,20 +23,14 @@ jobs:
       - name: Set up Python
         run: uv python install 3.11
 
-      # shadow-mcp grades by delegating to local sibling checkouts of the MCPAudit
-      # and mcp-trust engines (the path-sourced `engines` group). Those don't exist
-      # in CI, and `uv sync` builds the editable path-sources even when the group is
-      # deselected. So install the package with --no-deps plus the runtime + dev
-      # tools it needs; discovery + the local OWASP layer are fully exercised and the
-      # engine-backed tests skip cleanly via importorskip.
-      - name: Install (without local grading engines)
-        run: |
-          uv venv
-          uv pip install pydantic rich "mcp>=1.27.0,<2" pytest ruff
-          uv pip install --no-deps -e .
+      # All deps (incl. the mcp-audits + mcp-trust grading engines) now resolve
+      # from PyPI, so a plain sync installs the full grading path. The engine-backed
+      # tests run for real here — config-only scans with no live targets. (The one
+      # real-spawn connected test is gated behind SHADOW_MCP_RUN_CONNECT and stays
+      # skipped.)
+      - name: Install
+        run: uv sync
 
-      # --no-sync: run against the env built above; never trigger an auto-sync that
-      # would try to resolve the missing engine path-sources.
       - name: Lint
         run: uv run --no-sync ruff check .
 
