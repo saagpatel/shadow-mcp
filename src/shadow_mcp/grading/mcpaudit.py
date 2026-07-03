@@ -18,9 +18,10 @@ from ..models import McpAuditGrade, ServerSpec
 def muffle_stdout():
     """Capture stdout written by the delegated engine.
 
-    MCPAudit prints a stray newline per scan (and connected-mode progress) to
-    stdout. shadow-mcp's stdout is its machine-readable deliverable (JSON /
-    markdown), so the engine's chatter must never reach it.
+    mcp-audits>=2.3 is silent by default (no console passed -> no output), so
+    this is defense in depth: shadow-mcp's stdout is its machine-readable
+    deliverable (JSON / markdown), and an upstream output regression must never
+    corrupt it.
     """
     with contextlib.redirect_stdout(io.StringIO()):
         yield
@@ -112,6 +113,15 @@ def grade_mcpaudit(name: str, spec: ServerSpec) -> McpAuditGrade:
     except Exception as exc:  # never let the engine break discovery
         return McpAuditGrade(composite=0.0, high_risk=False, error=f"{type(exc).__name__}: {exc}")
 
+    schema = report.get("schema_version", 1)
+    if schema != 1:
+        # The engine's report contract changed shape in a way this adapter was
+        # not written for; an explicit error beats mis-parsed grades.
+        return McpAuditGrade(
+            composite=0.0,
+            high_risk=False,
+            error=f"unsupported mcp-audits report schema_version {schema}",
+        )
     audits = report.get("audits") or []
     if not audits:
         return McpAuditGrade(composite=0.0, high_risk=False, error="no audit produced")
