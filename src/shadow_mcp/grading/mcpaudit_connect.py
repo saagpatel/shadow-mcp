@@ -2,7 +2,7 @@
 
 The static (config-only) path can't see a server's capabilities, so most grades
 bottom out. This path delegates to MCPAudit's *connected* engine
-(``_run_scan_core(skip_connect=False)`` — the same core the CLI's ``scan`` runs)
+(``mcp_audit.engine.run_scan`` — the same public core the CLI's ``scan`` runs)
 to spawn the server, list its tools, and score real permissions plus the deeper
 injection/trifecta checks against actual tool descriptions.
 
@@ -21,31 +21,31 @@ _PASTED_SOURCE = "shadow-mcp:connect"
 
 
 def _run_connected(name: str, spec: ServerSpec, timeout: int) -> dict | None:
-    """Drive MCPAudit's connected core in-memory; return the ServerAudit dict."""
+    """Drive MCPAudit's connected engine in-memory; return the ServerAudit dict."""
     import anyio
     from mcp_audit.api import parse_config
-    from mcp_audit.cli import _run_scan_core
-    from mcp_audit.overrides import OverrideApplier, OverrideConfig
+    from mcp_audit.engine import ScanOptions, run_scan
 
     config = {"mcpServers": {name: _to_client_spec(spec)}}
     servers = parse_config(config, source=_PASTED_SOURCE)
 
     async def _scan():
-        return await _run_scan_core(
-            skip_connect=False,  # CONNECT: spawn the server and enumerate tools
-            clients=None,
-            timeout=timeout,
-            extra_config=None,
-            override_applier=OverrideApplier(OverrideConfig()),
-            inject_check=True,
-            trifecta_check=True,
-            config_only=False,
+        # skip_connect defaults to False: spawn the server and enumerate tools.
+        # No console is passed, so the engine renders nothing (silent contract).
+        return await run_scan(
+            ScanOptions(timeout=timeout, inject_check=True, trifecta_check=True),
             servers=servers,
         )
 
     with muffle_stdout():
         report = anyio.run(_scan)
-    audits = report.model_dump(mode="json").get("audits") or []
+    dumped = report.model_dump(mode="json")
+    schema = dumped.get("schema_version", 1)
+    if schema != 1:
+        # Caught by grade_mcpaudit_connected's fallback: the static path
+        # re-checks and surfaces the version mismatch as the grade error.
+        raise ValueError(f"unsupported mcp-audits report schema_version {schema}")
+    audits = dumped.get("audits") or []
     return audits[0] if audits else None
 
 
@@ -61,7 +61,7 @@ def grade_mcpaudit_connected(name: str, spec: ServerSpec, *, timeout: int = 8) -
     try:
         audit = _run_connected(name, spec, timeout)
     except ImportError:
-        return McpAuditGrade(composite=0.0, high_risk=False, error="mcp-audits not installed")
+        return McpAuditGrade(composite=0.0, high_risk=False, error="mcp-audits>=2.3 not installed")
     except Exception as exc:  # a flaky spawn must never break the sweep
         static = grade_mcpaudit(name, spec)
         static.connection_status = "failed"

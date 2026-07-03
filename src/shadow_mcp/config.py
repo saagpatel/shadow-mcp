@@ -8,8 +8,31 @@ macOS developer machine.
 from __future__ import annotations
 
 import os
+from contextlib import suppress
 from dataclasses import dataclass, field
 from pathlib import Path
+
+
+def _installed_mcptrust_seed() -> Path | None:
+    """Locate ``seed_servers.json`` inside an installed mcp-trust package.
+
+    The seed catalog ships in the mcp-trust wheel, so resolving it from the
+    installed package works on any machine — unlike a source-checkout path,
+    which only exists on a development box. Returns None when mcp-trust is not
+    installed or the resource is not a plain file (e.g. a zipped install);
+    callers fall back to the source-checkout layout.
+    """
+    try:
+        from importlib.resources import files
+
+        res = files("mcp_trust") / "catalog" / "seed_servers.json"
+    except (ImportError, ModuleNotFoundError):
+        return None
+    with suppress(OSError, TypeError, ValueError):
+        p = Path(str(res))
+        if p.is_file():
+            return p
+    return None
 
 
 @dataclass
@@ -34,10 +57,9 @@ class DiscoveryPaths:
             claude_desktop_config=app_support / "claude_desktop_config.json",
             claude_extensions_dir=app_support / "Claude Extensions",
             codex_config=codex / "config.toml",
-            codex_profile_configs=[
-                codex / "docs_curation_mcp.config.toml",
-                codex / "web_research_mcp.config.toml",
-            ],
+            # Any per-profile Codex config, not a hardcoded machine-specific
+            # list. "*.config.toml" cannot match the main "config.toml".
+            codex_profile_configs=sorted(codex.glob("*.config.toml")),
             projects_root=h / "Projects",
         )
 
@@ -50,10 +72,16 @@ class GradingPaths:
     @classmethod
     def default(cls, home: Path | None = None) -> GradingPaths:
         h = home or Path.home()
-        trust = Path(os.environ.get("SHADOW_MCP_MCPTRUST_DIR", h / "Projects" / "mcp-trust"))
+        trust_env = os.environ.get("SHADOW_MCP_MCPTRUST_DIR")
+        trust = Path(trust_env) if trust_env else h / "Projects" / "mcp-trust"
+        checkout_seed = trust / "src" / "mcp_trust" / "catalog" / "seed_servers.json"
+        # Precedence: explicit SHADOW_MCP_MCPTRUST_DIR wins; otherwise prefer
+        # the seed bundled with the installed mcp-trust package (portable to
+        # any machine) and fall back to the source-checkout layout.
+        seed = checkout_seed if trust_env else (_installed_mcptrust_seed() or checkout_seed)
         return cls(
             mcptrust_registry_db=Path(
                 os.environ.get("SHADOW_MCP_MCPTRUST_DB", trust / "registry.db")
             ),
-            mcptrust_seed=trust / "src" / "mcp_trust" / "catalog" / "seed_servers.json",
+            mcptrust_seed=seed,
         )

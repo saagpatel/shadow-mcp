@@ -1,6 +1,6 @@
 [project]
 name = "shadow-mcp"
-version = "0.1.0"
+version = "0.2.0"
 description = "Discover and risk-grade the MCP servers actually present on this machine. Local-first shadow-MCP inventory."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -11,14 +11,18 @@ dependencies = [
     "rich>=13",
     "mcp>=1.27.0,<2",
     # Grading engines, resolved from PyPI. mcp-audits provides the static
-    # capability analyzer (mcp_audit.api.scan_config_only_dict); mcp-trust
-    # provides the A-F danger-grade logic (mcp_trust.core.grading.grade). Both
-    # are imported lazily (try/except ImportError) so a partial install degrades
-    # to discovery-only rather than crashing — but a normal `uvx shadow-mcp`
-    # install pulls them from PyPI and grades fully. The mcp cap stays <2 so a
-    # fresh uvx resolve can't pull a v2 alpha that breaks the FastMCP API.
-    "mcp-audits>=2.2.3",
-    "mcp-trust>=0.1.0",
+    # capability analyzer (mcp_audit.api.scan_config_only_dict) and the public
+    # connected scan engine (mcp_audit.engine.run_scan, added in 2.3);
+    # mcp-trust provides the A-F danger-grade logic (mcp_trust.core.grading.grade)
+    # and bundles the seed catalog we resolve slugs from. Both are imported
+    # lazily (try/except ImportError) so a partial install degrades to
+    # discovery-only rather than crashing — but a normal `uvx shadow-mcp`
+    # install pulls them from PyPI and grades fully. Upper bounds: a major
+    # version bump on either engine is a contract change that must fail at
+    # resolve time, not mid-scan. The mcp cap stays <2 so a fresh uvx resolve
+    # can't pull a v2 alpha that breaks the FastMCP API.
+    "mcp-audits>=2.3,<3",
+    "mcp-trust>=0.1.0,<1",
 ]
 
 [dependency-groups]
