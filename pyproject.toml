@@ -1,6 +1,6 @@
 [project]
 name = "shadow-mcp"
-version = "0.1.0"
+version = "0.2.0"
 description = "Discover and risk-grade the MCP servers actually present on this machine. Local-first shadow-MCP inventory."
 readme = "README.md"
 requires-python = ">=3.11"
