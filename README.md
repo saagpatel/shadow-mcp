@@ -99,7 +99,7 @@ reading workstation configs, executing servers or connecting to endpoints.
 
 The broader suite uses fixtures and includes config-only engine integration.
 Keep `SHADOW_MCP_RUN_CONNECT` unset: the explicitly opted-in connected test is a
-separate server-execution lane, not the routine smoke. CI runs `uv sync --locked`, Ruff
+separate server-execution lane, not the routine smoke. CI runs `uv sync --locked --python 3.11`, Ruff
 and pytest after installing Python 3.11; see [the workflow](.github/workflows/ci.yml). There
 is no separate configured formatter or typecheck lane. `uv build` is the wheel
 and sdist build used by [the release workflow](.github/workflows/publish.yml);
