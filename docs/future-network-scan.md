@@ -7,7 +7,7 @@ the boundary is a decision and not an accident. None of this is built yet.
 
 ## What local-first already covers
 
-- Every config host on this machine (Claude Code, Codex, Claude Desktop, DXT,
+- Supported config sources on this machine (Claude Code, Codex, Claude Desktop, DXT,
   project `.mcp.json`) plus the live process table.
 - Per-server capability grade (MCPAudit), A-F danger grade (mcp-trust), and the
   config-shaped OWASP layer: secrets (MCP01), transport exposure (MCP07),
@@ -20,12 +20,11 @@ the boundary is a decision and not an accident. None of this is built yet.
    This is the true "shadow IT" inventory across many machines, vs one machine's
    configs. Needs: a target list, an async port/endpoint prober, an MCP
    handshake probe (`initialize`) to confirm a port is really MCP.
-2. **Live capability enumeration.** Connect to each server and list its actual
-   `tools` / `resources` / `prompts`, instead of grading from the launch config.
-   This unlocks the *connected* half of MCPAudit (drift, escalation, provenance,
-   integrity, tool-poisoning in real tool descriptions) that the static
-   config-only path cannot see. Needs: an MCP client, a connection budget, and a
-   safety model (connecting executes the server).
+2. **Remote capability enumeration.** Connect to remote endpoints and list their
+   actual `tools` / `resources` / `prompts`, instead of grading from the launch
+   config. Local stdio tool enumeration already exists via `scan --connect` and
+   `deep-scan`, delegated to MCPAudit's connected engine. Remote enumeration
+   needs a connection budget and a safety model for contacting endpoints.
 3. **Supply-chain / provenance depth (MCP04).** Resolve each package to its
    registry (npm/pypi), compute typosquat distance against known-good names,
    check publisher reputation and version pinning, and flag rug-pull risk
@@ -42,7 +41,8 @@ the boundary is a decision and not an accident. None of this is built yet.
 ## Why it is out of scope now
 
 Each item above adds a dependency or a safety surface the local tool does not
-need: a target list, network egress, executing servers to enumerate them, a
-registry client, or a persistent baseline. The local tool stays read-only,
-zero-network, and instantly useful. The network tier is a separate product
+need by default: a target list, remote endpoint probing, a registry client, or a
+persistent baseline. Default grading is static; local connected grading executes
+servers only when opted in. Discovery also invokes `claude mcp list` unless
+`--no-cli` is set. The network tier is a separate product
 decision to make when there is a fleet to inventory, not a single machine.

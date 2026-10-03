@@ -16,7 +16,7 @@ This is the local-first answer to **OWASP MCP09:2025 — Shadow MCP Servers**.
 discover  ->  inventory  ->  risk-grade  ->  report
 ```
 
-1. **Discover** (read-only) every place an MCP server is declared or running:
+1. **Discover** (read-only) MCP servers from supported configuration and runtime sources:
    Claude Code (`~/.claude.json`, user + project scope), `claude mcp list`
    (catches remote + plugin servers no file contains), Codex
    (`~/.codex/config.toml` + profiles), project `.mcp.json`, Claude Desktop
@@ -41,7 +41,7 @@ The risk model and its OWASP mapping live in [docs/risk-model.md](docs/risk-mode
 From this repository root, use Python 3.11+ and `uv`:
 
 ```bash
-uv sync --locked --python 3.11   # CI Python; locked runtime and default dev group
+uv sync --locked --python 3.11   # Python version installed by CI; locked runtime and default dev group
 ```
 
 The grading engines (`mcp-audits` and `mcp-trust`) are runtime dependencies
@@ -100,7 +100,7 @@ reading workstation configs, executing servers or connecting to endpoints.
 The broader suite uses fixtures and includes config-only engine integration.
 Keep `SHADOW_MCP_RUN_CONNECT` unset: the explicitly opted-in connected test is a
 separate server-execution lane, not the routine smoke. CI runs `uv sync --locked --python 3.11`, Ruff
-and pytest with Python 3.11; see [the workflow](.github/workflows/ci.yml). There
+and pytest after installing Python 3.11; see [the workflow](.github/workflows/ci.yml). There
 is no separate configured formatter or typecheck lane. `uv build` is the wheel
 and sdist build used by [the release workflow](.github/workflows/publish.yml);
 building locally does not publish, and tagging/publishing is a separate action.
@@ -114,7 +114,8 @@ connected behavior requires its own explicitly authorized qualification.
 
 ## Safety
 
-- **Read-only discovery.** Collectors parse configs and list processes; nothing
+- **Read-only discovery.** Collectors parse configs, invoke `claude mcp list`
+  (unless `--no-cli` is set), and list processes; nothing
   they find is ever mutated. (`--connect`/`deep-scan` is the one path that
   *executes* servers, and only when you explicitly ask.)
 - **Secrets stay out.** We record env variable *names* (to flag secret-bearing
@@ -133,14 +134,14 @@ query your local MCP surface without leaving the conversation.
 |---|---|
 | `scan_local` | Full pipeline (discover → inventory → grade → report). Returns JSON. |
 | `discover_local` | Inventory every MCP server without grading. Returns JSON. |
-| `deep_scan` | Grade only the named servers (static, no spawning). Accepts `names: list[str]`. Returns JSON. |
+| `deep_scan` | Grade the named servers, or all servers when the list is empty (static, no spawning). Accepts `names: list[str]`. Returns JSON. |
 | `list_sources` | Per-collector source counts from a discover run. Returns JSON. |
 
 ### Run the server
 
 ```bash
 # directly from a local checkout
-shadow-mcp mcp-serve
+uv run shadow-mcp mcp-serve
 
 # via uvx (once published to PyPI)
 uvx shadow-mcp mcp-serve
