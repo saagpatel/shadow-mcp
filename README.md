@@ -38,13 +38,16 @@ The risk model and its OWASP mapping live in [docs/risk-model.md](docs/risk-mode
 
 ## Install
 
+From this repository root, use Python 3.11+ and `uv`:
+
 ```bash
-uv sync                 # installs deps incl. MCPAudit as a local editable engine
+uv sync --python 3.11   # CI Python; runtime dependencies plus the default dev group
 ```
 
-shadow-mcp grades against your local checkouts of MCPAudit (`../MCPAudit`) and
-mcp-trust (`../mcp-trust/registry.db`). Override with `SHADOW_MCP_MCPTRUST_DB`
-or `--registry-db`.
+The grading engines (`mcp-audits` and `mcp-trust`) are runtime dependencies
+resolved from PyPI, not editable sibling checkouts or an `engines` group.
+The installed mcp-trust package supplies its seed catalog; `--registry-db` or
+`SHADOW_MCP_MCPTRUST_DB` selects an explicitly chosen local registry instead.
 
 ## Use
 
@@ -76,22 +79,38 @@ executes the server; remote endpoints are never spawned (that's the network-scan
 tier), and a server that needs real secrets to start falls back to its static
 grade.
 
-## Development
+## Development and safe verification
+
+No `uv.lock` is committed. Sync resolves `pyproject.toml` and creates a local
+lockfile/environment; `--locked` is not valid for a fresh clone. After the sync
+above, run from the repository root:
 
 ```bash
-uv sync                       # dev tools + grading engines (the default groups)
-uv run pytest                 # full suite (61 + engine-backed tests)
-uv run ruff check .           # lint
+uv run --no-sync pytest tests/test_cli.py::test_discover_skips_grading -q
+uv run --no-sync pytest tests/test_cli.py::test_scan_json_end_to_end -q
+uv run --no-sync ruff check .
+uv run --no-sync pytest
 ```
 
-The grading engines are an optional `engines` dependency-group, resolved to your
-local checkouts of `../MCPAudit` and `../mcp-trust` via `[tool.uv.sources]`. The
-tool degrades to discovery-only without them (engine-backed tests skip cleanly),
-so CI installs without them:
+The two focused tests build a temporary synthetic home and disable both process
+and CLI discovery. The scan test additionally disables MCPAudit and supplies an
+absent temporary registry path. They exercise inventory/reporting without
+reading workstation configs, executing servers or connecting to endpoints.
 
-```bash
-uv sync --no-group engines    # discovery + local OWASP layer only (what CI runs)
-```
+The broader suite uses fixtures and includes config-only engine integration.
+Keep `SHADOW_MCP_RUN_CONNECT` unset: the explicitly opted-in connected test is a
+separate server-execution lane, not the routine smoke. CI runs `uv sync`, Ruff
+and pytest with Python 3.11; see [the workflow](.github/workflows/ci.yml). There
+is no separate configured formatter or typecheck lane. `uv build` is the wheel
+and sdist build used by [the release workflow](.github/workflows/publish.yml);
+building locally does not publish, and tagging/publishing is a separate action.
+
+Do not use the normal `scan`, `discover`, `sources`, `grade-missing` or MCP tool
+calls as a development smoke: they inventory the machine by default. CLI
+`deep-scan` and `scan --connect` additionally execute servers. For changed JSON
+or Markdown reports, check the corresponding fixture tests (`tests/test_report.py`)
+and inspect synthetic output; this CLI has no browser UI. Actual workstation or
+connected behavior requires its own explicitly authorized qualification.
 
 ## Safety
 
