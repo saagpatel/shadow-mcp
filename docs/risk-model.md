@@ -60,8 +60,8 @@ is best placed to inspect):**
    materially changes blast radius. Used as a risk modifier, not a base score.
 4. **Governance / inventory status (MCP09).** **[ESTABLISHED]** the category;
    **[INFERENCE]** that it should be surfaced explicitly. shadow-mcp reports
-   blast radius (how many hosts declare a server) and the shadow deltas
-   (running-but-unconfigured, configured-everywhere, capable-but-ungraded).
+   blast radius (how many config sources declare a server) and the shadow deltas
+   (running-but-unconfigured, broad-blast-radius, capable-but-ungraded).
 
 ## The lethal trifecta
 
@@ -76,32 +76,38 @@ findings; composing the trifecta across the installed set is future work.
 
 The sortable band (critical / high / medium / low / unknown) is derived from the
 MCPAudit composite as the base, then adjusted:
-- base: composite >= 7 critical, >= 5 high, >= 3.5 medium, > 0 low, else unknown
-- mcp-trust grade of F or D raises the band by one step (authoritative danger signal)
+- base: composite >= 7 critical, >= 5 high, >= 3.5 medium, otherwise low
+  (including zero); missing or errored MCPAudit grades start as unknown
+- mcp-trust grade of F or D raises the band by one step, or sets an unknown
+  band to high (registry or computed danger signal)
 - an HTTP/SSE transport raises a low/medium band by one step (MCP07 exposure)
-- the assessment's `reasons` cite the OWASP ID behind each contribution
+- the assessment's `reasons` cite OWASP IDs for capability findings, transport,
+  secrets and broad reach; mcp-trust contributions name their grade and origin
 
 This keeps the numeric grade delegated and explainable while letting the local
-layer (secrets, transport, provenance, governance) shape the final verdict with
-cited justification.
+layer explain secrets and broad reach alongside the transport band modifier.
+Provenance is retained in the inventory, without a separate band modifier.
 
 ## Registry vs computed A-F grades
 
 mcp-trust only stores grades for servers someone has already scanned and seeded
-(a handful). Every other discovered server gets a **computed** A-F letter: we
-feed MCPAudit's static dimensions into mcp-trust's own `grade()` (its danger
-weighting + critical cap), so the letter comes from mcp-trust's logic, not a
+(a handful). Servers without a registry grade get a **computed** A-F letter
+when MCPAudit produces a usable grade and mcp-trust's grading logic is available: we
+feed MCPAudit's dimensions (static by default, connected when opted in) into
+mcp-trust's own `grade()` (its danger weighting + critical cap), so the letter
+comes from mcp-trust's logic, not a
 reimplementation, and without writing to its database. Computed grades are
 marked with a trailing `~` and flagged `computed: true`.
 
-**Honest caveat (the transparency axis).** A computed grade is derived from
+**Honest caveat (the transparency axis).** By default a computed grade is derived from
 *static config only* (no connection, no live tool enumeration), so for stdio
 servers launched via wrappers/npx, MCPAudit sees little and most letters land at
 **A**. Per mcp-trust's own transparency model, that is `transparency: low` —
 "cannot verify safe", **not** "verified safe". So a computed `A~` means "no
 capability risk detectable from config alone." The **band** (not the letter)
-carries the differentiated signal, because the band folds in the local OWASP
-layer (transport/MCP07, secrets/MCP01, blast radius/MCP09).
+carries the differentiated signal through transport/MCP07; secrets/MCP01 and
+blast radius/MCP09 appear in reasons without changing the band. Computed grades
+are marked `transparency: low` even when derived from a connected scan.
 
 **Connected grading (`--connect` / `deep-scan`).** To populate the capability
 dimensions for real, shadow-mcp can spawn a stdio server and enumerate its tools,
