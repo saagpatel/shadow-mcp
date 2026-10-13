@@ -18,9 +18,9 @@ import re
 import subprocess
 from collections.abc import Callable
 
-from ..models import DiscoveredServer, Provenance, ServerSpec
+from ..models import DiscoveredServer, Provenance, ServerSpec, SourceKind
 
-SOURCE = "process"
+SOURCE: SourceKind = "process"
 
 Runner = Callable[[], "tuple[int, str]"]
 

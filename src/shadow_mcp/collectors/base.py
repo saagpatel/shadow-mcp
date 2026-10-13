@@ -7,9 +7,10 @@ error is recorded as a note and the sweep continues.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Protocol
 
 from ..config import DiscoveryPaths
-from ..models import DiscoveredServer
+from ..models import DiscoveredServer, SourceKind
 from .claude_cli import ClaudeCliCollector
 from .claude_code import ClaudeCodeCollector
 from .claude_desktop import ClaudeDesktopCollector
@@ -17,6 +18,12 @@ from .codex import CodexCollector
 from .dxt import DxtCollector
 from .processes import ProcessCollector
 from .project_mcp import ProjectMcpJsonCollector
+
+
+class Collector(Protocol):
+    source: SourceKind
+
+    def collect(self) -> list[DiscoveredServer]: ...
 
 
 @dataclass
@@ -31,8 +38,8 @@ def default_collectors(
     *,
     include_processes: bool = True,
     include_cli: bool = True,
-) -> list[object]:
-    collectors: list[object] = [
+) -> list[Collector]:
+    collectors: list[Collector] = [
         ClaudeCodeCollector(paths),
         ClaudeDesktopCollector(paths),
         CodexCollector(paths),
@@ -51,7 +58,7 @@ def discover_all(
     *,
     include_processes: bool = True,
     include_cli: bool = True,
-    collectors: list[object] | None = None,
+    collectors: list[Collector] | None = None,
 ) -> DiscoveryResult:
     paths = paths or DiscoveryPaths.default()
     cols = (
@@ -63,7 +70,7 @@ def discover_all(
     for col in cols:
         source = getattr(col, "source", col.__class__.__name__)
         try:
-            found = col.collect()  # type: ignore[attr-defined]
+            found = col.collect()
         except Exception as exc:  # a collector must never break the sweep
             result.errors.append(f"{source}: {type(exc).__name__}: {exc}")
             continue

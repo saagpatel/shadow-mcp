@@ -22,7 +22,7 @@ from .collectors import discover_all
 from .config import DiscoveryPaths, GradingPaths
 from .grading import grade_inventory
 from .inventory import build_inventory
-from .models import GradedServer, RiskAssessment
+from .models import GradedServer, Report, RiskAssessment
 from .report import build_report, render_markdown, render_terminal
 
 
@@ -42,7 +42,9 @@ def _grading_paths(args: argparse.Namespace) -> GradingPaths:
     return gp
 
 
-def _run_pipeline(args: argparse.Namespace, *, grade: bool, only: list[str] | None = None):
+def _run_pipeline(
+    args: argparse.Namespace, *, grade: bool, only: list[str] | None = None
+) -> Report:
     paths = _discovery_paths(args)
     result = discover_all(
         paths,
@@ -92,7 +94,7 @@ def _run_pipeline(args: argparse.Namespace, *, grade: bool, only: list[str] | No
     return report
 
 
-def _emit(report, args: argparse.Namespace) -> None:
+def _emit(report: Report, args: argparse.Namespace) -> None:
     if args.json:
         Path(args.json).write_text(
             json.dumps(report.model_dump(mode="json"), indent=2), encoding="utf-8"
@@ -149,9 +151,13 @@ def cmd_grade_missing(args: argparse.Namespace) -> int:
         f"{len(in_registry)} server(s) graded by the mcp-trust registry; "
         f"{len(computed)} computed from MCPAudit dimensions via mcp-trust grade():\n"
     )
-    for g in sorted(computed, key=lambda g: g.risk.mcptrust.grade):
+    for g in sorted(
+        computed, key=lambda g: g.risk.mcptrust.grade if g.risk.mcptrust is not None else ""
+    ):
         e = g.entry
-        print(f"  {g.risk.mcptrust.grade}  {e.canonical_name:28} ({','.join(e.sources)})")
+        trust_grade = g.risk.mcptrust
+        if trust_grade is not None:
+            print(f"  {trust_grade.grade}  {e.canonical_name:28} ({','.join(e.sources)})")
     return 0
 
 

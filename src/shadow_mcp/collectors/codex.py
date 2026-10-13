@@ -13,9 +13,9 @@ from pathlib import Path
 from typing import Any
 
 from ..config import DiscoveryPaths
-from ..models import DiscoveredServer, Provenance, ServerSpec, Transport
+from ..models import DiscoveredServer, Provenance, ServerSpec, SourceKind, Transport
 
-SOURCE = "codex"
+SOURCE: SourceKind = "codex"
 
 
 def _load_toml(path: Path) -> dict[str, Any] | None:

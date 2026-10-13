@@ -13,9 +13,9 @@ import shutil
 import subprocess
 from collections.abc import Callable
 
-from ..models import DiscoveredServer, Provenance, ServerSpec, Transport
+from ..models import DiscoveredServer, Provenance, ServerSpec, SourceKind, Transport
 
-SOURCE = "claude_cli"
+SOURCE: SourceKind = "claude_cli"
 
 Runner = Callable[[], "tuple[int, str]"]
 

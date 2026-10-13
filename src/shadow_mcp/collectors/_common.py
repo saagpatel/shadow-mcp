@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from ..models import DiscoveredServer, Provenance, ServerSpec, SourceKind, Transport
 
@@ -71,7 +71,7 @@ def infer_spec(raw: dict[str, Any], base_dir: str | None = None) -> ServerSpec:
     declared = (raw.get("type") or raw.get("transport") or "").lower()
     transport: Transport
     if declared in ("stdio", "http", "sse"):
-        transport = declared  # type: ignore[assignment]
+        transport = cast(Transport, declared)
     elif url and not command:
         transport = "sse" if "sse" in str(url).lower() else "http"
     elif command:
