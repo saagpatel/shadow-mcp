@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from pathlib import Path
 
 from shadow_mcp import mcp_server
@@ -83,3 +84,22 @@ def test_build_server_name() -> None:
     app = mcp_server.build_server()
     assert app is not None
     assert app.name == "shadow-mcp"
+
+
+def test_default_payloads_do_not_run_claude_cli(fake_home, monkeypatch) -> None:
+    args = mcp_server._default_args(fake_home)
+    assert args.no_cli is True
+    assert args.connect is False
+
+    def fail_if_claude_mcp_list(command, *args, **kwargs):
+        if command and command[0] == "claude":
+            raise AssertionError("MCP payloads must not run claude mcp list")
+        if command and command[0] == "ps":
+            return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+        raise AssertionError(f"unexpected subprocess command: {command}")
+
+    monkeypatch.setattr(subprocess, "run", fail_if_claude_mcp_list)
+    mcp_server.scan_local_payload(mcp_server._default_args(fake_home))
+    mcp_server.discover_local_payload(mcp_server._default_args(fake_home))
+    mcp_server.deep_scan_payload([], mcp_server._default_args(fake_home))
+    mcp_server.list_sources_payload(mcp_server._default_args(fake_home))

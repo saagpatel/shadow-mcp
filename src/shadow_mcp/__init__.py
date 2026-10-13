@@ -6,4 +6,6 @@ engines (MCPAudit for a 0-10 capability composite, mcp-trust for an A-F danger
 grade) rather than reimplementing them.
 """
 
-__version__ = "0.1.0"
+from importlib.metadata import version
+
+__version__ = version("shadow-mcp")

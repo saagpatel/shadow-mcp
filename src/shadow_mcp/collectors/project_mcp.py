@@ -9,10 +9,10 @@ from __future__ import annotations
 from pathlib import Path
 
 from ..config import DiscoveryPaths
-from ..models import DiscoveredServer
+from ..models import DiscoveredServer, SourceKind
 from ._common import load_json, parse_mcp_servers_block
 
-SOURCE = "project_mcp_json"
+SOURCE: SourceKind = "project_mcp_json"
 
 _SKIP_DIRS = {"node_modules", ".git", ".venv", "venv", "dist", "build", "__pycache__", "target"}
 _MAX_FILES = 200  # hard cap so a pathological tree can't stall discovery

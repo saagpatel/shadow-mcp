@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 from ..config import DiscoveryPaths
-from ..models import DiscoveredServer
+from ..models import DiscoveredServer, SourceKind
 from ._common import load_json, parse_mcp_servers_block
 
-SOURCE = "claude_desktop"
+SOURCE: SourceKind = "claude_desktop"
 
 
 class ClaudeDesktopCollector:

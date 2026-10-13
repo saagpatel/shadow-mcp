@@ -26,8 +26,8 @@ discover  ->  inventory  ->  risk-grade  ->  report
    `personal_ops`), tracking every provenance.
 3. **Risk-grade** by **delegating** to the existing engines rather than
    reimplementing them:
-   - [MCPAudit](../MCPAudit) for a 0-10 capability composite + injection findings
-   - [mcp-trust](../mcp-trust) for an authoritative A-F danger grade (when known)
+   - [MCPAudit](https://pypi.org/project/mcp-audits/) for a 0-10 capability composite + injection findings
+   - [mcp-trust](https://pypi.org/project/mcp-trust/) for an authoritative A-F danger grade (when known)
    - a thin local layer for the config-shaped OWASP dimensions the engines under-cover
      (secrets/MCP01, supply-chain provenance/MCP04, transport exposure/MCP07).
 4. **Report**: a ranked terminal table, a machine-readable JSON inventory, or
@@ -38,10 +38,10 @@ The risk model and its OWASP mapping live in [docs/risk-model.md](docs/risk-mode
 
 ## Install
 
-From this repository root, use Python 3.11+ and `uv`:
+From this repository root, use `uv`:
 
 ```bash
-uv sync --locked --python 3.11   # Python version installed by CI; locked runtime and default dev group
+make setup
 ```
 
 The grading engines (`mcp-audits` and `mcp-trust`) are runtime dependencies
@@ -81,29 +81,18 @@ grade.
 
 ## Development and safe verification
 
-The committed `uv.lock` fixes the PyPI runtime and development graph. Locked
-sync validates it against `pyproject.toml` without changing the lock. After the
-sync above, run from the repository root:
+The committed `uv.lock` fixes the PyPI runtime and development graph. From the
+repository root, run:
 
 ```bash
-uv run --no-sync pytest tests/test_cli.py::test_discover_skips_grading -q
-uv run --no-sync pytest tests/test_cli.py::test_scan_json_end_to_end -q
-uv run --no-sync ruff check .
-uv run --no-sync pytest
+make check
 ```
 
-The two focused tests build a temporary synthetic home and disable both process
-and CLI discovery. The scan test additionally disables MCPAudit and supplies an
-absent temporary registry path. They exercise inventory/reporting without
-reading workstation configs, executing servers or connecting to endpoints.
-
-The broader suite uses fixtures and includes config-only engine integration.
-Keep `SHADOW_MCP_RUN_CONNECT` unset: the explicitly opted-in connected test is a
-separate server-execution lane, not the routine smoke. CI runs `uv sync --locked --python 3.11`, Ruff
-and pytest after installing Python 3.11; see [the workflow](.github/workflows/ci.yml). There
-is no separate configured formatter or typecheck lane. `uv build` is the wheel
-and sdist build used by [the release workflow](.github/workflows/publish.yml);
-building locally does not publish, and tagging/publishing is a separate action.
+The suite uses synthetic homes. Keep `SHADOW_MCP_RUN_CONNECT` unset: the
+explicitly opted-in connected test is a separate server-execution lane. CI runs
+the same aggregate gate on Python 3.11 through 3.15; see
+[the workflow](.github/workflows/ci.yml). `make build` creates the wheel and
+sdist used by [the release workflow](.github/workflows/publish.yml).
 
 Do not use the normal `scan`, `discover`, `sources`, `grade-missing` or MCP tool
 calls as a development smoke: they inventory the machine by default. CLI
@@ -119,9 +108,10 @@ connected behavior requires its own explicitly authorized qualification.
   they find is ever mutated. (`--connect`/`deep-scan` is the one path that
   *executes* servers, and only when you explicitly ask.)
 - **Secrets stay out.** We record env variable *names* (to flag secret-bearing
-  servers per MCP01) but never their values. A captured inventory still contains
-  real local paths and hostnames, so treat `*.inventory.json` as private (it is
-  git-ignored by default).
+  servers per MCP01) but never their values. Inline credentials in command
+  arguments, URLs, and process parent commands are redacted before storage. A
+  captured inventory still contains local paths and hostnames, so treat
+  `*.inventory.json` as private (it is git-ignored by default).
 
 ## Use as an MCP server
 
@@ -147,9 +137,9 @@ uv run shadow-mcp mcp-serve
 uvx shadow-mcp mcp-serve
 ```
 
-**LOCAL only.** The MCP server never connects to hosted MCP endpoints — all
-grading is static (config-based). `connect=False` is enforced unconditionally;
-no server is ever spawned from an MCP tool call.
+**LOCAL only.** MCP tools read local configs and the process table, skip
+`claude mcp list`, and never connect to hosted MCP endpoints or spawn servers.
+Grading is static (config-based); `connect=False` is enforced unconditionally.
 
 ## Scope
 
@@ -158,3 +148,32 @@ and processes. A later network-scan expansion (probing hosts/ports for remote
 MCP endpoints, org-wide fleet inventory, typosquat-distance provenance checks)
 is deliberately out of scope here — see the bottom of `docs/risk-model.md` and
 the project notes for what that would add.
+
+## Status
+
+### Stack
+
+Python 3.11+; uv-managed locked dependencies; Ruff, mypy, and pytest checks;
+Hatchling wheel and sdist builds.
+
+### Known risks
+
+- The minimum Python version remains 3.11 pending an owner decision about raising
+  it to 3.12.
+- The MCP tool name `deep_scan` remains unchanged pending an owner decision; the
+  similarly named CLI command can connect to servers.
+- Identity collisions in identity and inventory matching.
+- Process sightings are deduplicated by name before owner classification.
+- Grading evidence is limited to eight findings, and `critical` ranks below
+  `low`.
+- Collector failures can be silent.
+- `--json` is ignored by `sources` and `grade-missing`.
+- Report writes are not atomic.
+- Markdown and Rich output escaping differs.
+- Dependency major upgrades, moving off Hatchling, a coverage threshold, package
+  publishing, tags, and releases remain out of scope.
+
+### Next steps
+
+Resolve the Python floor and MCP tool naming decisions, then address the listed
+behavior risks in a follow-up wave.

@@ -1,5 +1,8 @@
-from shadow_mcp.models import ServerSpec
+from shadow_mcp.collectors.processes import parse_ps_output
+from shadow_mcp.inventory import build_inventory
+from shadow_mcp.models import GradedServer, Provenance, RiskAssessment, ServerSpec
 from shadow_mcp.redact import scrub_args, scrub_url
+from shadow_mcp.report import build_report
 
 
 def test_scrub_args_redacts_key_value_pairs():
@@ -42,3 +45,39 @@ def test_serverspec_scrubs_on_construction():
     )
     assert "leaky" not in spec.args
     assert "leaky" not in (spec.url or "")
+
+
+def test_report_redacts_parent_command_and_url_argument():
+    process_servers = parse_ps_output(
+        "42 1 claude --api-key SENTINEL\n"
+        "43 42 /opt/github-mcp-server --endpoint https://u:SENTINEL@h/mcp"
+    )
+    entries = build_inventory(process_servers)
+    graded = [
+        GradedServer(entry=entry, risk=RiskAssessment(band="unknown", headline="ungraded"))
+        for entry in entries
+    ]
+    report = build_report(
+        graded,
+        host="fixture",
+        generated_at="2026-01-01T00:00:00+00:00",
+        source_counts={"process": len(process_servers)},
+    )
+    serialized = report.model_dump_json()
+    assert "SENTINEL" not in serialized
+    assert "u:REDACTED@h" in serialized
+    assert scrub_args(["--read-only", "stdio"]) == ["--read-only", "stdio"]
+
+
+def test_provenance_scrubs_parent_command():
+    provenance = Provenance(
+        source="process",
+        location="ps",
+        declared_name="fixture",
+        parent="claude --api-key SENTINEL",
+    )
+    assert "SENTINEL" not in provenance.model_dump_json()
+
+
+def test_scrub_args_redacts_url_userinfo():
+    assert scrub_args(["--endpoint", "https://u:SENTINEL@h/mcp"])[1] == ("https://u:REDACTED@h/mcp")

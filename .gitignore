@@ -4,6 +4,11 @@ __pycache__/
 # Repository development and CI use the committed uv.lock.
 # Published consumers and uvx still resolve package metadata from PyPI.
 .pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.uv-python/
+.uv-cache/
+.cargo-home/
 *.egg-info/
 dist/
 build/

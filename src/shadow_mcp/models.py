@@ -53,6 +53,12 @@ class Provenance(BaseModel):
     host_managed: bool | None = None  # process-only: spawned by a known MCP host
     parent: str | None = None  # process-only: parent process command (provenance)
 
+    @model_validator(mode="after")
+    def _scrub_parent(self) -> Provenance:
+        if self.parent:
+            self.parent = " ".join(scrub_args(self.parent.split()))
+        return self
+
 
 class ServerSpec(BaseModel):
     """A normalized, redacted server specification."""
@@ -95,36 +101,36 @@ class InventoryEntry(BaseModel):
     spec: ServerSpec
     provenances: list[Provenance] = Field(default_factory=list)
 
-    @computed_field  # type: ignore[prop-decorator]
+    @computed_field  # type: ignore[prop-decorator]  # Pydantic supports this decorator order.
     @property
     def sources(self) -> list[SourceKind]:
         return list(dict.fromkeys(p.source for p in self.provenances))
 
-    @computed_field  # type: ignore[prop-decorator]
+    @computed_field  # type: ignore[prop-decorator]  # Pydantic supports this decorator order.
     @property
     def running(self) -> bool:
         return any(p.source == "process" for p in self.provenances)
 
-    @computed_field  # type: ignore[prop-decorator]
+    @computed_field  # type: ignore[prop-decorator]  # Pydantic supports this decorator order.
     @property
     def standalone_process(self) -> bool:
         """A live process NOT spawned by a known MCP host (a genuine rogue, not a
         host/plugin-managed child)."""
         return any(p.source == "process" and p.host_managed is False for p in self.provenances)
 
-    @computed_field  # type: ignore[prop-decorator]
+    @computed_field  # type: ignore[prop-decorator]  # Pydantic supports this decorator order.
     @property
     def configured(self) -> bool:
         return any(p.source != "process" for p in self.provenances)
 
-    @computed_field  # type: ignore[prop-decorator]
+    @computed_field  # type: ignore[prop-decorator]  # Pydantic supports this decorator order.
     @property
     def host_count(self) -> int:
         """Distinct config hosts (excludes the runtime/process sighting)."""
         hosts = {p.source for p in self.provenances if p.source != "process"}
         return len(hosts)
 
-    @computed_field  # type: ignore[prop-decorator]
+    @computed_field  # type: ignore[prop-decorator]  # Pydantic supports this decorator order.
     @property
     def disabled(self) -> bool:
         """True only if every provenance that expresses state says disabled."""

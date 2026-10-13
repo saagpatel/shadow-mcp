@@ -8,10 +8,10 @@ distinct registration surface from the ``mcpServers`` block.
 from __future__ import annotations
 
 from ..config import DiscoveryPaths
-from ..models import DiscoveredServer, Provenance
+from ..models import DiscoveredServer, Provenance, SourceKind
 from ._common import infer_spec, load_json
 
-SOURCE = "dxt"
+SOURCE: SourceKind = "dxt"
 
 
 class DxtCollector:
@@ -34,10 +34,12 @@ class DxtCollector:
             if manifest is None:
                 continue
             name = str(manifest.get("name") or ext.name)
-            server = manifest.get("server")
-            if not isinstance(server, dict):
+            server_value = manifest.get("server")
+            if not isinstance(server_value, dict):
                 continue
-            raw = server.get("mcp_config") if isinstance(server.get("mcp_config"), dict) else server
+            server: dict[str, object] = server_value
+            config_value = server.get("mcp_config")
+            raw: dict[str, object] = config_value if isinstance(config_value, dict) else server
             # A DXT server type (node/python/binary) implies a stdio transport;
             # inject it into the raw dict so infer_spec resolves it at construction
             # (rather than mutating the validated model afterward).

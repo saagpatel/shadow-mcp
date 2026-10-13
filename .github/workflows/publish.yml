@@ -6,31 +6,42 @@ on:
       - 'v*'
 
 jobs:
-  build-and-publish:
-    name: Build and publish to PyPI
+  build:
+    name: Build and verify distribution
+    runs-on: ubuntu-latest
+    env:
+      UV_PYTHON: "3.15"
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          enable-cache: true
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.15"
+      - run: make setup
+      - run: make check
+      - run: uv build --out-dir dist
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: python-package-distributions
+          path: dist/
+          if-no-files-found: error
+          retention-days: 1
+
+  publish:
+    needs: build
     runs-on: ubuntu-latest
     environment: pypi
     permissions:
-      contents: read   # checkout needs read on this (private) repo
-      id-token: write  # OIDC trusted publishing
-
+      id-token: write
     steps:
-      - uses: actions/checkout@v7
-
-      - uses: astral-sh/setup-uv@v7
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
-          python-version: "3.11"
-
-      # Gate the release on the test suite: a broken tag must not publish. The
-      # grading engines resolve from PyPI now, so the full suite (engine-backed
-      # tests included) runs as the gate.
-      - name: Test gate
-        run: uv run pytest -q
-
-      - name: Build wheel and sdist
-        run: uv build
-
-      - name: Publish to PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
+          name: python-package-distributions
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
         with:
           packages-dir: dist/
