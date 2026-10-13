@@ -20,13 +20,14 @@ from .collectors import discover_all
 
 
 def _default_args(home: Path | str | None = None) -> argparse.Namespace:
-    """Build a default 'scan' Namespace with connect=False forced.
+    """Build a local-only default scan Namespace.
 
     Args:
         home: Override $HOME for discovery (used in tests with a fixture tree).
     """
     args = build_parser().parse_args(["scan"])
     args.connect = False  # CRITICAL: never spawn/connect to any local server
+    args.no_cli = True  # MCP tools never run `claude mcp list`.
     if home is not None:
         args.home = str(home)
     return args
@@ -76,26 +77,27 @@ def build_server() -> Any:
         name="shadow-mcp",
         instructions=(
             "Inventory and risk-grade MCP servers configured on this machine. "
-            "LOCAL only — reads configs, never connects to or spawns any MCP server."
+            "LOCAL only — MCP tools read configs and the process table, skip `claude mcp list`, "
+            "and never connect to or spawn any MCP server."
         ),
     )
 
-    @app.tool()  # type: ignore[misc]
+    @app.tool()
     def scan_local() -> str:
         """Run the full pipeline: discover, inventory, grade, and report. Returns JSON."""
         return scan_local_payload()
 
-    @app.tool()  # type: ignore[misc]
+    @app.tool()
     def discover_local() -> str:
         """Inventory every MCP server on this machine without grading. Returns JSON."""
         return discover_local_payload()
 
-    @app.tool()  # type: ignore[misc]
+    @app.tool()
     def deep_scan(names: list[str]) -> str:
         """Grade only the named servers (static, no spawning). Returns JSON."""
         return deep_scan_payload(names)
 
-    @app.tool()  # type: ignore[misc]
+    @app.tool()
     def list_sources() -> str:
         """Show per-collector source counts from a discover run. Returns JSON."""
         return list_sources_payload()
