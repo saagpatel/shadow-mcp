@@ -9,30 +9,48 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
-jobs:
-  test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
+permissions:
+  contents: read
 
-      - name: Install uv
-        uses: astral-sh/setup-uv@v8.2.0
+jobs:
+  check:
+    name: Check Python ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+    env:
+      UV_PYTHON: ${{ matrix.python-version }}
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13", "3.14", "3.15"]
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
           enable-cache: true
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: ${{ matrix.python-version }}
+      - run: make setup
+      - run: make check
 
-      - name: Set up Python
-        run: uv python install 3.11
-
-      # All deps (incl. the mcp-audits + mcp-trust grading engines) now resolve
-      # from PyPI, so a locked sync installs the reviewed grading path. The engine-backed
-      # tests run for real here — config-only scans with no live targets. (The one
-      # real-spawn connected test is gated behind SHADOW_MCP_RUN_CONNECT and stays
-      # skipped.)
-      - name: Install
-        run: uv sync --locked --python 3.11
-
-      - name: Lint
-        run: uv run --no-sync ruff check .
-
-      - name: Test
-        run: uv run --no-sync pytest
+  build:
+    name: Build wheel and smoke test
+    runs-on: ubuntu-latest
+    env:
+      UV_PYTHON: "3.15"
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          enable-cache: true
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.15"
+      - run: make setup
+      - run: make check
+      - run: make build
+      - name: Install wheel and smoke test
+        run: |
+          uv venv /tmp/shadow-mcp-wheel-venv
+          uv pip install --python /tmp/shadow-mcp-wheel-venv/bin/python dist/*.whl
+          /tmp/shadow-mcp-wheel-venv/bin/shadow-mcp --help
