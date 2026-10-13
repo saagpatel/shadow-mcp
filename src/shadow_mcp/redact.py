@@ -59,7 +59,10 @@ def scrub_args(args: list[str]) -> list[str]:
             redact_next = True
             out.append(a)
             continue
-        # value-shape backstop: catch a bearer/provider token regardless of flag
+        # URLs can contain userinfo and query credentials, so use the URL
+        # scrubber before the general credential-shape backstop.
+        if "://" in a:
+            a = scrub_url(a)
         out.append(scrub_value_shapes(a))
     return out
 
