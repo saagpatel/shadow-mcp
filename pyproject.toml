@@ -23,20 +23,24 @@ dependencies = [
     # can't pull a v2 alpha that breaks the FastMCP API.
     "mcp-audits>=2.3,<3",
     "mcp-trust>=0.1.0,<1",
+    "anyio>=4,<5",
 ]
 
 [dependency-groups]
-dev = ["pytest>=8", "ruff>=0.6"]
+dev = ["pytest>=8", "ruff>=0.17.0", "mypy>=2.4.0"]
 
 [project.scripts]
 shadow-mcp = "shadow_mcp.cli:main"
 
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling>=1.32.4,<2"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/shadow_mcp"]
+
+[tool.hatch.build.targets.sdist]
+include = ["src", "tests", "docs", "README.md", "server.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -54,3 +58,12 @@ select = ["E", "F", "I", "UP", "B"]
 # Test fixtures reproduce real `ps`/CLI output lines verbatim; wrapping them
 # would corrupt the data under test.
 "tests/**" = ["E501"]
+
+[tool.uv]
+required-version = ">=0.13.0"
+
+[tool.mypy]
+python_version = "3.11"
+mypy_path = "src"
+warn_unused_ignores = true
+ignore_missing_imports = true
