@@ -37,24 +37,24 @@ def scan_local_payload(_args: argparse.Namespace | None = None) -> str:
     """Full pipeline (discover -> inventory -> grade -> report). Returns report JSON."""
     args = _args if _args is not None else _default_args()
     report = _run_pipeline(args, grade=True)
-    return json.dumps(report.model_dump(mode="json"), indent=2)
+    return json.dumps(report.model_dump(mode="json"), indent=2, allow_nan=False)
 
 
 def discover_local_payload(_args: argparse.Namespace | None = None) -> str:
     """Inventory every MCP server without grading. Returns report JSON."""
     args = _args if _args is not None else _default_args()
     report = _run_pipeline(args, grade=False)
-    return json.dumps(report.model_dump(mode="json"), indent=2)
+    return json.dumps(report.model_dump(mode="json"), indent=2, allow_nan=False)
 
 
 def deep_scan_payload(
     names: list[str],
     _args: argparse.Namespace | None = None,
 ) -> str:
-    """Grade only the named servers (static, no server spawning). Returns report JSON."""
+    """Grade the named servers, or all servers when the list is empty. Returns report JSON."""
     args = _args if _args is not None else _default_args()
     report = _run_pipeline(args, grade=True, only=names or None)
-    return json.dumps(report.model_dump(mode="json"), indent=2)
+    return json.dumps(report.model_dump(mode="json"), indent=2, allow_nan=False)
 
 
 def list_sources_payload(_args: argparse.Namespace | None = None) -> str:
@@ -66,6 +66,8 @@ def list_sources_payload(_args: argparse.Namespace | None = None) -> str:
         include_processes=not args.no_processes,
         include_cli=not args.no_cli,
     )
+    if result.errors:
+        raise ValueError("Incomplete discovery:\n" + "\n".join(result.errors))
     return json.dumps(result.source_counts, indent=2)
 
 
@@ -94,12 +96,15 @@ def build_server() -> Any:
 
     @app.tool()
     def deep_scan(names: list[str]) -> str:
-        """Grade only the named servers (static, no spawning). Returns JSON."""
+        """Grade the named servers, or all servers when the list is empty (static, no spawning).
+
+        Returns JSON.
+        """
         return deep_scan_payload(names)
 
     @app.tool()
     def list_sources() -> str:
-        """Show per-collector source counts from a discover run. Returns JSON."""
+        """Return per-collector counts as JSON. Incomplete discovery returns a tool error."""
         return list_sources_payload()
 
     return app

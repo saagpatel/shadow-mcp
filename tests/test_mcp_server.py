@@ -95,7 +95,7 @@ def test_default_payloads_do_not_run_claude_cli(fake_home, monkeypatch) -> None:
         if command and command[0] == "claude":
             raise AssertionError("MCP payloads must not run claude mcp list")
         if command and command[0] == "ps":
-            return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+            return subprocess.CompletedProcess(command, 0, stdout="101 1 /bin/sleep 60", stderr="")
         raise AssertionError(f"unexpected subprocess command: {command}")
 
     monkeypatch.setattr(subprocess, "run", fail_if_claude_mcp_list)
@@ -103,3 +103,31 @@ def test_default_payloads_do_not_run_claude_cli(fake_home, monkeypatch) -> None:
     mcp_server.discover_local_payload(mcp_server._default_args(fake_home))
     mcp_server.deep_scan_payload([], mcp_server._default_args(fake_home))
     mcp_server.list_sources_payload(mcp_server._default_args(fake_home))
+
+
+def test_list_sources_rejects_incomplete_counts(fake_home, tmp_path, monkeypatch):
+    import asyncio
+
+    from mcp.shared.memory import create_connected_server_and_client_session
+
+    (fake_home / ".claude.json").write_text(
+        '{"mcpServers":{"ok":{"command":"x"},"bad":{"type":7}}}'
+    )
+    args = _test_args(fake_home, tmp_path)
+    monkeypatch.setattr(mcp_server, "_default_args", lambda: args)
+
+    async def call():
+        async with create_connected_server_and_client_session(mcp_server.build_server()) as client:
+            return await client.call_tool("list_sources", {})
+
+    result = asyncio.run(call())
+    assert result.isError
+    assert "claude_code" in result.content[0].text and "bad" in result.content[0].text
+
+
+def test_registered_deep_scan_describes_empty_names():
+    import asyncio
+
+    tools = asyncio.run(mcp_server.build_server().list_tools())
+    tool = next(tool for tool in tools if tool.name == "deep_scan")
+    assert "all servers when the list is empty" in tool.description
