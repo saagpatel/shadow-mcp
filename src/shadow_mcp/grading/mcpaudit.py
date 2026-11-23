@@ -43,6 +43,11 @@ _FINDING_KEYS = {
 _SEV_RANK = {"high": 3, "medium": 2, "low": 1}
 
 
+def _risk_score(value: object) -> float | None:
+    score = finite_score(value)
+    return score if score is not None and 0.0 <= score <= 10.0 else None
+
+
 def _to_client_spec(spec: ServerSpec) -> dict:
     d: dict = {}
     if spec.command:
@@ -89,21 +94,41 @@ def audit_to_grade(audit: dict, *, connected: bool = False) -> McpAuditGrade:
     rs = audit.get("risk_score")
     if not isinstance(rs, dict):
         rs = {}
-    composite = finite_score(rs.get("composite"))
-    if composite is None:
-        return McpAuditGrade(
-            composite=0.0, high_risk=False, error="missing or invalid capability composite"
-        )
-    dims = {k: float(v) for k, v in rs.items() if k != "composite" and isinstance(v, (int, float))}
     tools = audit.get("tools")
+    connection_status = audit.get("connection_status")
+    tool_count = len(tools) if isinstance(tools, list) else None
+
+    def unavailable(error: str) -> McpAuditGrade:
+        return McpAuditGrade(
+            composite=0.0,
+            high_risk=False,
+            error=error,
+            connected=connected,
+            connection_status=connection_status,
+            tool_count=tool_count,
+        )
+
+    composite = _risk_score(rs.get("composite"))
+    if composite is None:
+        return unavailable("missing or invalid capability composite score")
+    dims: dict[str, float] = {}
+    for key, value in rs.items():
+        if key == "composite":
+            continue
+        if not isinstance(key, str):
+            return unavailable("invalid capability score dimension name")
+        score = _risk_score(value)
+        if score is None:
+            return unavailable(f"invalid capability score dimension {key}")
+        dims[key] = score
     return McpAuditGrade(
         composite=composite,
         high_risk=composite >= 7.0,
         findings=_extract_findings(audit),
         dimensions=dims,
         connected=connected,
-        connection_status=audit.get("connection_status"),
-        tool_count=len(tools) if isinstance(tools, list) else None,
+        connection_status=connection_status,
+        tool_count=tool_count,
     )
 
 
