@@ -55,8 +55,8 @@ def grade_mcpaudit_connected(name: str, spec: ServerSpec, *, timeout: int = 8) -
     Falls back to the static grade if the engine is missing, the server is not
     stdio, or the connection fails (so we never lose the config-only signal).
     """
-    if spec.transport not in ("stdio", "unknown"):
-        # remote endpoints are out of scope for a local tool; grade statically
+    if spec.transport not in ("stdio", "unknown") or not (spec.command or "").strip():
+        # Remote endpoints and entries without a launch command stay static.
         return grade_mcpaudit(name, spec)
     try:
         audit = _run_connected(name, spec, timeout)

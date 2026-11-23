@@ -172,8 +172,8 @@ Hatchling wheel and sdist builds.
   similarly named CLI command can connect to servers.
 - Identity collisions in identity and inventory matching.
 - Process sightings are deduplicated by name before owner classification.
-- Grading evidence is limited to eight findings, and `critical` ranks below
-  `low`.
+- Grading evidence is limited to eight findings, with critical findings kept
+  ahead of lower-severity findings.
 - Collector failures can be silent.
 - `--json` is ignored by `sources` and `grade-missing`.
 - Report writes are not atomic.

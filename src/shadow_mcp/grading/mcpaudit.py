@@ -12,7 +12,7 @@ import contextlib
 import io
 
 from ..models import McpAuditGrade, ServerSpec
-from ._score import finite_score
+from ._score import risk_score
 
 
 @contextlib.contextmanager
@@ -40,12 +40,7 @@ _FINDING_KEYS = {
     "provenance_findings": "provenance",
     "integrity_findings": "integrity",
 }
-_SEV_RANK = {"high": 3, "medium": 2, "low": 1}
-
-
-def _risk_score(value: object) -> float | None:
-    score = finite_score(value)
-    return score if score is not None and 0.0 <= score <= 10.0 else None
+_SEV_RANK = {"critical": 4, "high": 3, "medium": 2, "low": 1, "info": 0}
 
 
 def _to_client_spec(spec: ServerSpec) -> dict:
@@ -64,38 +59,48 @@ def _to_client_spec(spec: ServerSpec) -> dict:
     return d
 
 
-def _extract_findings(audit: dict) -> list[dict]:
+def _extract_findings(audit: dict) -> tuple[list[dict], str | None]:
     out: list[dict] = []
     for key, category in _FINDING_KEYS.items():
-        items = audit.get(key)
-        if not isinstance(items, list):
+        if key not in audit:
             continue
+        items = audit[key]
+        if not isinstance(items, list):
+            return [], f"invalid MCPAudit findings {key}"
         for f in items:
             if not isinstance(f, dict):
-                continue
+                return [], f"invalid MCPAudit finding in {key}"
+            severity = f.get("severity")
+            if not isinstance(severity, str) or severity.lower() not in _SEV_RANK:
+                return [], f"invalid MCPAudit finding severity in {key}"
             out.append(
                 {
                     "rule_id": f.get("rule_id"),
-                    "severity": str(f.get("severity") or "").lower(),
+                    "severity": severity.lower(),
                     "title": f.get("title") or f.get("description") or "",
                     "category": category,
                 }
             )
-    out.sort(key=lambda f: _SEV_RANK.get(f["severity"], 0), reverse=True)
-    return out[:8]
+    out.sort(key=lambda f: _SEV_RANK[f["severity"]], reverse=True)
+    return out[:8], None
 
 
-def audit_to_grade(audit: dict, *, connected: bool = False) -> McpAuditGrade:
+def audit_to_grade(audit: object, *, connected: bool = False) -> McpAuditGrade:
     """Parse one MCPAudit ServerAudit dict into our McpAuditGrade.
 
     Shared by the static (config-only) and connected scan paths so both surface
     the same shape.
     """
-    rs = audit.get("risk_score")
-    if not isinstance(rs, dict):
-        rs = {}
+    if not isinstance(audit, dict):
+        return McpAuditGrade(
+            composite=0.0,
+            high_risk=False,
+            connected=connected,
+            error="invalid MCPAudit audit record",
+        )
+    raw_connection_status = audit.get("connection_status")
+    connection_status = raw_connection_status if isinstance(raw_connection_status, str) else None
     tools = audit.get("tools")
-    connection_status = audit.get("connection_status")
     tool_count = len(tools) if isinstance(tools, list) else None
 
     def unavailable(error: str) -> McpAuditGrade:
@@ -108,7 +113,14 @@ def audit_to_grade(audit: dict, *, connected: bool = False) -> McpAuditGrade:
             tool_count=tool_count,
         )
 
-    composite = _risk_score(rs.get("composite"))
+    if raw_connection_status is not None and connection_status is None:
+        return unavailable("invalid MCPAudit connection status")
+
+    rs = audit.get("risk_score")
+    if not isinstance(rs, dict):
+        rs = {}
+
+    composite = risk_score(rs.get("composite"))
     if composite is None:
         return unavailable("missing or invalid capability composite score")
     dims: dict[str, float] = {}
@@ -117,14 +129,19 @@ def audit_to_grade(audit: dict, *, connected: bool = False) -> McpAuditGrade:
             continue
         if not isinstance(key, str):
             return unavailable("invalid capability score dimension name")
-        score = _risk_score(value)
+        score = risk_score(value)
         if score is None:
             return unavailable(f"invalid capability score dimension {key}")
         dims[key] = score
+
+    findings, findings_error = _extract_findings(audit)
+    if findings_error:
+        return unavailable(findings_error)
+
     return McpAuditGrade(
         composite=composite,
         high_risk=composite >= 7.0,
-        findings=_extract_findings(audit),
+        findings=findings,
         dimensions=dims,
         connected=connected,
         connection_status=connection_status,
@@ -133,6 +150,15 @@ def audit_to_grade(audit: dict, *, connected: bool = False) -> McpAuditGrade:
 
 
 def grade_mcpaudit(name: str, spec: ServerSpec) -> McpAuditGrade:
+    has_command = bool(spec.command and spec.command.strip())
+    has_url = bool(spec.url and spec.url.strip())
+    if not has_command and not has_url:
+        return McpAuditGrade(
+            composite=0.0,
+            high_risk=False,
+            error="missing usable command or URL",
+        )
+
     try:
         from mcp_audit.api import scan_config_only_dict
     except ImportError:
@@ -145,6 +171,12 @@ def grade_mcpaudit(name: str, spec: ServerSpec) -> McpAuditGrade:
     except Exception as exc:  # never let the engine break discovery
         return McpAuditGrade(composite=0.0, high_risk=False, error=f"{type(exc).__name__}: {exc}")
 
+    if not isinstance(report, dict):
+        return McpAuditGrade(
+            composite=0.0,
+            high_risk=False,
+            error="invalid mcp-audits report object",
+        )
     schema = report.get("schema_version", 1)
     if schema != 1:
         # The engine's report contract changed shape in a way this adapter was
@@ -154,7 +186,9 @@ def grade_mcpaudit(name: str, spec: ServerSpec) -> McpAuditGrade:
             high_risk=False,
             error=f"unsupported mcp-audits report schema_version {schema}",
         )
-    audits = report.get("audits") or []
+    audits = report.get("audits")
+    if not isinstance(audits, list):
+        return McpAuditGrade(composite=0.0, high_risk=False, error="invalid mcp-audits audits list")
     if not audits:
         return McpAuditGrade(composite=0.0, high_risk=False, error="no audit produced")
     return audit_to_grade(audits[0], connected=False)

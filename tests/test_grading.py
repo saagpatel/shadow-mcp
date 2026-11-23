@@ -100,6 +100,22 @@ def test_mcptrust_resolves_seed_and_reads_grade(trust_paths):
     assert g.composite == 2.7
 
 
+@pytest.mark.parametrize("composite", [11.0, -1.0, float("inf"), float("nan")])
+def test_mcptrust_invalid_composite_keeps_registry_grade(trust_paths, composite):
+    with sqlite3.connect(trust_paths.mcptrust_registry_db) as db:
+        db.execute("UPDATE scans SET risk_json = ?", (json.dumps({"composite": composite}),))
+
+    grader = McpTrustGrader(trust_paths)
+    grade = grader.grade(_entry(name="mcp-reference-time"))
+    grader.close()
+
+    assert grade.grade == "B"
+    assert grade.slug == "mcp-reference-time"
+    assert grade.transparency == "high"
+    assert grade.composite is None
+    assert grade.error == "invalid registry composite"
+
+
 def test_mcptrust_resolves_by_package_reference(trust_paths):
     grader = McpTrustGrader(trust_paths)
     e = _entry(name="whatever", command="npx")
@@ -126,11 +142,29 @@ def test_compute_trust_grade_maps_dimensions_to_letter():
     pytest.importorskip("mcp_trust")
     # high file_access -> danger-weighted -> low letter (D/F)
     risky = McpAuditGrade(
-        composite=7.7, high_risk=True, dimensions={"file_access": 8.0, "network_access": 2.0}
+        composite=7.7,
+        high_risk=True,
+        dimensions={
+            "file_access": 8.0,
+            "network_access": 2.0,
+            "shell_execution": 0.0,
+            "destructive": 0.0,
+            "exfiltration": 0.0,
+        },
     )
     assert compute_trust_grade(risky) in ("D", "F")
     # near-zero capability -> A
-    benign = McpAuditGrade(composite=0.0, high_risk=False, dimensions={"file_access": 0.0})
+    benign = McpAuditGrade(
+        composite=0.0,
+        high_risk=False,
+        dimensions={
+            "file_access": 0.0,
+            "network_access": 0.0,
+            "shell_execution": 0.0,
+            "destructive": 0.0,
+            "exfiltration": 0.0,
+        },
+    )
     assert compute_trust_grade(benign) == "A"
     # no usable audit -> no computed grade
     assert compute_trust_grade(None) is None

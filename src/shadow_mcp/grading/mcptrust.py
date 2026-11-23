@@ -16,7 +16,7 @@ from pathlib import Path
 from ..config import GradingPaths
 from ..identity import normalize_name, normalize_url, signature
 from ..models import InventoryEntry, McpTrustGrade
-from ._score import finite_score
+from ._score import risk_score
 
 
 def _strip_version(pkg: str) -> str:
@@ -133,7 +133,7 @@ class McpTrustGrader:
         except (TypeError, ValueError):
             risk = None
         if isinstance(risk, dict):
-            composite = finite_score(risk.get("composite"))
+            composite = risk_score(risk.get("composite"))
             error = "invalid registry composite" if composite is None else None
         else:
             composite = None
