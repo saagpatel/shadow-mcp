@@ -9,6 +9,7 @@ from __future__ import annotations
 from pathlib import Path
 from stat import S_ISDIR
 
+from ..config import directory_entries
 from ..models import DiscoveredServer, SourceKind
 from ._common import ConfigCollector, load_json, parse_mcp_servers_block
 
@@ -27,13 +28,7 @@ class ProjectMcpJsonCollector(ConfigCollector):
         stack = [root]
         while stack and len(found) < _MAX_FILES:
             current = stack.pop()
-            try:
-                entries = list(current.iterdir())
-            except OSError as exc:
-                if current != root or not isinstance(exc, FileNotFoundError):
-                    errors.append(f"{current}: {exc.strerror or exc}")
-                continue
-            for entry in entries:
+            for entry in directory_entries(current, errors, optional=current == root):
                 try:
                     if S_ISDIR(entry.stat().st_mode):
                         if entry.name in _SKIP_DIRS or entry.name.startswith("."):
@@ -46,6 +41,8 @@ class ProjectMcpJsonCollector(ConfigCollector):
                             return found, True
                         found.append(entry)
                 except FileNotFoundError:  # dangling symlink or removed while walking
+                    if entry.name in (".mcp.json", "mcp.json"):
+                        errors.append(f"{entry}: listed configuration is missing")
                     continue
                 except OSError as exc:
                     errors.append(f"{entry}: {exc.strerror or exc}")
@@ -66,6 +63,7 @@ class ProjectMcpJsonCollector(ConfigCollector):
                 errors.append(str(exc))
                 continue
             if data is None:
+                errors.append(f"{f}: listed configuration is missing")
                 continue
             out.extend(
                 parse_mcp_servers_block(

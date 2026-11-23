@@ -8,7 +8,9 @@ distinct registration surface from the ``mcpServers`` block.
 from __future__ import annotations
 
 from pathlib import Path
+from stat import S_ISDIR
 
+from ..config import directory_entries
 from ..models import DiscoveredServer, Provenance, SourceKind
 from ._common import ConfigCollector, infer_spec, load_json
 
@@ -20,18 +22,17 @@ class DxtCollector(ConfigCollector):
 
     def collect_with_errors(self, errors: list[str]) -> list[DiscoveredServer]:
         root = self.paths.claude_extensions_dir
-        if not root.exists():
-            return []
         out: list[DiscoveredServer] = []
-        for ext in root.iterdir():
-            if ext.is_dir():
-                try:
-                    server = _read_manifest(ext / "manifest.json")
-                except (OSError, ValueError) as exc:
-                    errors.append(f"{ext.name}: {exc}")
+        for ext in directory_entries(root, errors, optional=True):
+            try:
+                if not S_ISDIR(ext.stat().st_mode):
                     continue
-                if server is not None:
-                    out.append(server)
+                server = _read_manifest(ext / "manifest.json")
+            except (OSError, ValueError) as exc:
+                errors.append(f"{ext}: {exc}")
+                continue
+            if server is not None:
+                out.append(server)
         return out
 
 
@@ -39,9 +40,11 @@ def _read_manifest(path: Path) -> DiscoveredServer | None:
     manifest = load_json(path)
     if manifest is None:
         return None
-    name = str(manifest.get("name") or path.parent.name)
     if "server" not in manifest:
         return None
+    name = manifest.get("name", path.parent.name)
+    if not isinstance(name, str) or not name.strip():
+        raise ValueError(f"{path}: name must be a non-empty string")
     server = manifest.get("server")
     if not isinstance(server, dict):
         raise ValueError(f"{path}: server must be an object")

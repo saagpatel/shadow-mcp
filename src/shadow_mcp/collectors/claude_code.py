@@ -27,18 +27,22 @@ class ClaudeCodeCollector(ConfigCollector):
             location=loc,
             scope="user",
         )
-        projects = data.get("projects")
-        if isinstance(projects, dict):
-            for proj_path, proj in projects.items():
-                if not isinstance(proj, dict):
-                    continue
-                out.extend(
-                    parse_mcp_servers_block(
-                        proj.get("mcpServers", {}),
-                        errors=errors,
-                        source=SOURCE,
-                        location=f"{loc}#projects.{proj_path}",
-                        scope="project",
-                    )
+        projects = data.get("projects", {})
+        if not isinstance(projects, dict):
+            errors.append(f"{loc}: projects must be an object")
+            return out
+        for proj_path, proj in projects.items():
+            project_loc = f"{loc}#projects.{proj_path}"
+            if not isinstance(proj, dict):
+                errors.append(f"{project_loc}: project must be an object")
+                continue
+            out.extend(
+                parse_mcp_servers_block(
+                    proj.get("mcpServers", {}),
+                    errors=errors,
+                    source=SOURCE,
+                    location=project_loc,
+                    scope="project",
                 )
+            )
         return out

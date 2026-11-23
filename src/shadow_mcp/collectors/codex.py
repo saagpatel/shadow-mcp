@@ -24,11 +24,13 @@ def _load_toml(path: Path) -> dict[str, Any] | None:
         return None
     try:
         return tomllib.loads(raw.decode("utf-8"))
-    except ValueError as exc:
+    except (ValueError, RecursionError) as exc:
         raise ValueError(f"{path}: invalid TOML ({type(exc).__name__})") from exc
 
 
 def _spec_from_table(table: dict[str, Any]) -> ServerSpec:
+    if not table:
+        raise ValueError("empty server declaration")
     command = table.get("command")
     url = table.get("url")
     args_raw = table.get("args", [])
@@ -37,6 +39,10 @@ def _spec_from_table(table: dict[str, Any]) -> ServerSpec:
         raise ValueError("command must be a string")
     if url is not None and not isinstance(url, str):
         raise ValueError("url must be a string")
+    if command is not None and not command.strip():
+        raise ValueError("command must not be blank")
+    if url is not None and not url.strip():
+        raise ValueError("url must not be blank")
     if not isinstance(args_raw, list) or not all(isinstance(arg, str) for arg in args_raw):
         raise ValueError("args must be an array of strings")
     if not isinstance(env, dict):
@@ -54,7 +60,9 @@ def _spec_from_table(table: dict[str, Any]) -> ServerSpec:
 
 def _parse_file(path: Path, scope: str, errors: list[str]) -> list[DiscoveredServer]:
     data = _load_toml(path)
-    if not data:
+    if data is None:
+        if scope == "profile":
+            errors.append(f"{path}: listed profile is missing")
         return []
     servers = data.get("mcp_servers")
     if servers is None:
@@ -93,6 +101,7 @@ class CodexCollector(ConfigCollector):
     source = SOURCE
 
     def collect_with_errors(self, errors: list[str]) -> list[DiscoveredServer]:
+        errors.extend(self.paths.codex_profile_errors)
         out: list[DiscoveredServer] = []
         for path in (self.paths.codex_config, *self.paths.codex_profile_configs):
             scope = "user" if path == self.paths.codex_config else "profile"

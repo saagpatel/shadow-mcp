@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 from pathlib import Path
 
@@ -10,6 +11,9 @@ import pytest
 
 from shadow_mcp import mcp_server
 from shadow_mcp.cli import build_parser
+from shadow_mcp.collectors import claude_cli, discover_all, processes
+from shadow_mcp.collectors.base import default_collectors
+from shadow_mcp.config import DiscoveryPaths
 
 
 def _test_args(fake_home: Path, tmp_path: Path):
@@ -174,3 +178,160 @@ def test_registered_deep_scan_describes_empty_names():
     tools = asyncio.run(mcp_server.build_server().list_tools())
     tool = next(tool for tool in tools if tool.name == "deep_scan")
     assert "all servers when the list is empty" in tool.description
+
+
+_CODEX = ".codex/config.toml"
+_PROJECT = "Projects/.mcp.json"
+_DESKTOP = "Library/Application Support/Claude"
+_EXTENSIONS = f"{_DESKTOP}/Claude Extensions"
+_VISIBLE = {"command": "x"}
+_SERVER_MAP = {"mcpServers": {"visible": _VISIBLE}}
+_BAD_FLAG = {"mcpServers": {"bad": {"command": "y", "enabled": "false"}, "visible": _VISIBLE}}
+_CODEX_CONFIG = '[mcp_servers.visible]\ncommand = "x"'
+_MANIFEST = {"server": {"mcp_config": _VISIBLE}}
+
+
+# Files, simulated OS failure (operation, path), diagnostic, and surviving names.
+_SOURCE_CASES = [
+    (
+        "claude_code",
+        {".claude.json": {**_SERVER_MAP, "projects": []}},
+        None,
+        "projects",
+        ["visible"],
+    ),
+    (
+        "claude_code",
+        {
+            ".claude.json": {
+                **_SERVER_MAP,
+                "projects": {"bad-project": [], "good": {"mcpServers": {"other": _VISIBLE}}},
+            }
+        },
+        None,
+        "bad-project",
+        ["other", "visible"],
+    ),
+    (
+        "claude_desktop",
+        {f"{_DESKTOP}/claude_desktop_config.json": _BAD_FLAG},
+        None,
+        "enabled",
+        ["visible"],
+    ),
+    ("project_mcp_json", {_PROJECT: _BAD_FLAG}, None, "enabled", ["visible"]),
+    (
+        "claude_code",
+        {".claude.json": {"mcpServers": {"empty": {}, "visible": _VISIBLE}}},
+        None,
+        "empty",
+        ["visible"],
+    ),
+    (
+        "codex",
+        {_CODEX: _CODEX_CONFIG + "\n[mcp_servers.empty]"},
+        None,
+        "empty",
+        ["visible"],
+    ),
+    ("codex", {_CODEX: _CODEX_CONFIG}, ("list", ".codex"), ".codex", ["visible"]),
+    (
+        "codex",
+        {
+            _CODEX: _CODEX_CONFIG,
+            ".codex/one.config.toml": '[mcp_servers.profile]\ncommand = "y"',
+            ".codex/bad.config.toml": "[",
+        },
+        None,
+        "bad.config.toml",
+        ["profile", "visible"],
+    ),
+    (
+        "codex",
+        {_CODEX: _CODEX_CONFIG, ".codex/lost.config.toml": ""},
+        ("open", ".codex/lost.config.toml"),
+        "lost.config.toml",
+        ["visible"],
+    ),
+    (
+        "dxt",
+        {
+            f"{_EXTENSIONS}/visible/manifest.json": _MANIFEST,
+            f"{_EXTENSIONS}/denied/manifest.json": _MANIFEST,
+        },
+        ("stat", f"{_EXTENSIONS}/denied"),
+        f"{_EXTENSIONS}/denied",
+        ["visible"],
+    ),
+    (
+        "dxt",
+        {
+            f"{_EXTENSIONS}/visible/manifest.json": _MANIFEST,
+            f"{_EXTENSIONS}/bad/manifest.json": {**_MANIFEST, "name": []},
+        },
+        None,
+        "name",
+        ["visible"],
+    ),
+    (
+        "project_mcp_json",
+        {_PROJECT: _SERVER_MAP, "Projects/lost/.mcp.json": {}},
+        ("open", "Projects/lost/.mcp.json"),
+        "lost/.mcp.json",
+        ["visible"],
+    ),
+    ("claude_cli", {}, None, "row", ["visible"]),
+    ("process", {}, None, "row", ["visible-mcp"]),
+]
+
+
+def _inject_file_error(monkeypatch, operation, target):
+    def fail_at_target(original):
+        def wrapped(path, *args, **kwargs):
+            if path == target or path == str(target):
+                if operation == "open":
+                    raise FileNotFoundError
+                raise PermissionError("denied")
+            return original(path, *args, **kwargs)
+
+        return wrapped
+
+    # pathlib uses scandir or listdir depending on the Python version.
+    owner, methods = (os, ["scandir", "listdir"]) if operation == "list" else (Path, [operation])
+    for method in methods:
+        monkeypatch.setattr(owner, method, fail_at_target(getattr(owner, method)))
+
+
+@pytest.mark.parametrize(("source", "files", "fault", "diagnostic", "expected"), _SOURCE_CASES)
+def test_incomplete_source_keeps_valid_siblings(
+    tmp_path, monkeypatch, source, files, fault, diagnostic, expected
+):
+    for location, document in files.items():
+        path = tmp_path / location
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(document if isinstance(document, str) else json.dumps(document))
+    if fault:
+        operation, location = fault
+        _inject_file_error(monkeypatch, operation, tmp_path / location)
+
+    monkeypatch.setattr(claude_cli, "_default_runner", lambda: (0, "bad:\nvisible: x"))
+    monkeypatch.setattr(
+        processes, "_default_runner", lambda: (0, "bad row\n101 1 /bin/visible-mcp --mcp-server")
+    )
+    args = _test_args(tmp_path, tmp_path)
+    args.no_cli = source != "claude_cli"
+    args.no_processes = source != "process"
+    monkeypatch.setattr(mcp_server, "_default_args", lambda: args)
+
+    paths = DiscoveryPaths.default(tmp_path)
+    assert {c.source for c in default_collectors(paths)} == {case[0] for case in _SOURCE_CASES}
+    response = _call_registered_list_sources()
+    assert response.isError
+    message = response.content[0].text
+    assert f"{source}:" in message and diagnostic in message
+
+    discovery = discover_all(
+        paths, include_cli=not args.no_cli, include_processes=not args.no_processes
+    )
+    assert discovery.source_counts[source] == len(expected)
+    assert sorted(s.name for s in discovery.servers if s.provenance.source == source) == expected

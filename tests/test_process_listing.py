@@ -25,3 +25,12 @@ def test_valid_process_listing_without_servers(tmp_path):
     result = discover_all(DiscoveryPaths.default(tmp_path), collectors=[collector])
     assert result.errors == []
     assert result.source_counts == {"process": 0}
+
+
+def test_empty_cli_roster_with_status_lines(tmp_path):
+    text = "Checking MCP server health...\n\nNo MCP servers configured."
+    result = discover_all(
+        DiscoveryPaths.default(tmp_path), collectors=[ClaudeCliCollector(lambda: (0, text))]
+    )
+    assert result.errors == []
+    assert result.source_counts == {"claude_cli": 0}

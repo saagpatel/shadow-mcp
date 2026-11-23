@@ -17,11 +17,10 @@ from ..config import DiscoveryPaths
 from ..models import DiscoveredServer, Provenance, ServerSpec, SourceKind, Transport
 
 
-class ConfigCollector(ABC):
-    source: SourceKind
+class PartialCollector(ABC):
+    """Return usable sightings alongside diagnostics during a discovery sweep."""
 
-    def __init__(self, paths: DiscoveryPaths) -> None:
-        self.paths = paths
+    source: SourceKind
 
     def collect(self) -> list[DiscoveredServer]:
         errors: list[str] = []
@@ -32,6 +31,11 @@ class ConfigCollector(ABC):
 
     @abstractmethod
     def collect_with_errors(self, errors: list[str]) -> list[DiscoveredServer]: ...
+
+
+class ConfigCollector(PartialCollector):
+    def __init__(self, paths: DiscoveryPaths) -> None:
+        self.paths = paths
 
 
 def _resolve_rel(value: str, base_dir: str | None) -> str:
@@ -81,7 +85,7 @@ def load_json(path: Path) -> dict[str, Any] | None:
         return None
     try:
         data = json.loads(raw.decode("utf-8"))
-    except ValueError as exc:
+    except (ValueError, RecursionError) as exc:
         raise ValueError(f"{path}: invalid JSON ({type(exc).__name__})") from exc
     if not isinstance(data, dict):
         raise ValueError(f"{path}: expected a JSON object")
@@ -94,9 +98,13 @@ def infer_spec(raw: dict[str, Any], base_dir: str | None = None) -> ServerSpec:
     ``base_dir`` (the config's directory) canonicalizes relative command/script
     paths so they match the absolute form seen in the process table.
     """
+    if not raw:
+        raise ValueError("empty server declaration")
     for field in ("command", "url", "serverUrl", "endpoint", "type", "transport"):
         if field in raw and not isinstance(raw[field], str):
             raise ValueError(f"{field} must be a string")
+        if field in raw and not raw[field].strip():
+            raise ValueError(f"{field} must not be blank")
     command = raw.get("command")
     command = _resolve_rel(command, base_dir) if command else None
     args_raw = raw.get("args", [])
@@ -150,6 +158,9 @@ def parse_mcp_servers_block(
         try:
             if not isinstance(raw, dict):
                 raise ValueError("server declaration must be an object")
+            enabled = raw.get("enabled")
+            if "enabled" in raw and not isinstance(enabled, bool):
+                raise ValueError("enabled must be a boolean")
             spec = infer_spec(raw, base_dir)
         except ValueError as exc:
             message = f"{location}: {name}: {exc}"
@@ -157,7 +168,6 @@ def parse_mcp_servers_block(
                 raise ValueError(message) from exc
             errors.append(message)
             continue
-        enabled = raw.get("enabled")
         out.append(
             DiscoveredServer(
                 name=str(name),
@@ -167,7 +177,7 @@ def parse_mcp_servers_block(
                     location=location,
                     scope=scope,
                     declared_name=str(name),
-                    enabled=enabled if isinstance(enabled, bool) else None,
+                    enabled=enabled,
                 ),
             )
         )
