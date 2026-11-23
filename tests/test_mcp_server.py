@@ -195,6 +195,40 @@ _MANIFEST = {"server": {"mcp_config": _VISIBLE}}
 _SOURCE_CASES = [
     (
         "claude_code",
+        {
+            ".claude.json": {
+                "mcpServers": {
+                    "missing_target": {"type": "stdio", "args": []},
+                    "visible": _VISIBLE,
+                    "remote": {"serverUrl": "https://example.invalid/mcp"},
+                }
+            }
+        },
+        None,
+        "missing_target",
+        ["remote", "visible"],
+    ),
+    (
+        "codex",
+        {_CODEX: _CODEX_CONFIG + "\n[mcp_servers.missing_target]\nargs = []"},
+        None,
+        "missing_target",
+        ["visible"],
+    ),
+    (
+        "dxt",
+        {
+            f"{_EXTENSIONS}/visible/manifest.json": _MANIFEST,
+            f"{_EXTENSIONS}/missing_target/manifest.json": {
+                "server": {"type": "node", "mcp_config": {}}
+            },
+        },
+        None,
+        "missing_target",
+        ["visible"],
+    ),
+    (
+        "claude_code",
         {".claude.json": {**_SERVER_MAP, "projects": []}},
         None,
         "projects",

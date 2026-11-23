@@ -43,12 +43,14 @@ def _spec_from_table(table: dict[str, Any]) -> ServerSpec:
         raise ValueError("command must not be blank")
     if url is not None and not url.strip():
         raise ValueError("url must not be blank")
+    if not command and not url:
+        raise ValueError("server declaration requires a command or endpoint")
     if not isinstance(args_raw, list) or not all(isinstance(arg, str) for arg in args_raw):
         raise ValueError("args must be an array of strings")
     if not isinstance(env, dict):
         raise ValueError("env must be a table")
     env_keys = sorted(env)
-    transport: Transport = "stdio" if command else ("http" if url else "unknown")
+    transport: Transport = "stdio" if command else "http"
     return ServerSpec(
         transport=transport,
         command=command or None,

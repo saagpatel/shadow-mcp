@@ -112,6 +112,8 @@ def infer_spec(raw: dict[str, Any], base_dir: str | None = None) -> ServerSpec:
         raise ValueError("args must be an array of strings")
     args = [_resolve_rel(a, base_dir) for a in args_raw]
     url = raw.get("url") or raw.get("serverUrl") or raw.get("endpoint")
+    if not command and not url:
+        raise ValueError("server declaration requires a command or endpoint")
     env = raw.get("env")
     if "env" in raw and not isinstance(env, dict):
         raise ValueError("env must be an object")
@@ -121,12 +123,10 @@ def infer_spec(raw: dict[str, Any], base_dir: str | None = None) -> ServerSpec:
     transport: Transport
     if declared in ("stdio", "http", "sse"):
         transport = cast(Transport, declared)
-    elif url and not command:
-        transport = "sse" if "sse" in str(url).lower() else "http"
     elif command:
         transport = "stdio"
     else:
-        transport = "unknown"
+        transport = "sse" if "sse" in str(url).lower() else "http"
 
     return ServerSpec(
         transport=transport,
