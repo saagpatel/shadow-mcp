@@ -1,8 +1,10 @@
+import json
 import os
 import sqlite3
 
 import pytest
 
+from shadow_mcp import mcp_server
 from shadow_mcp.config import GradingPaths
 from shadow_mcp.grading.combine import assess
 from shadow_mcp.grading.mcptrust import McpTrustGrader
@@ -192,3 +194,60 @@ def test_grade_inventory_fills_unknown_with_computed(trust_paths):
     )
     assert graded[0].risk.mcptrust.grade == "unknown"
     assert graded[0].risk.mcptrust.computed is False
+
+
+@pytest.mark.parametrize(
+    "fault, diagnostic",
+    [("table", "lookup"), ("json", "risk_json"), ("letter", "grade"), ("seed", "catalog")],
+)
+def test_corrupt_registry_reports_diagnostic(trust_paths, fault, diagnostic):
+    from shadow_mcp.models import GradedServer
+    from shadow_mcp.report import build_report
+
+    with sqlite3.connect(trust_paths.mcptrust_registry_db) as db:
+        if fault == "table":
+            db.execute("DROP TABLE scans")
+        elif fault == "json":
+            db.execute("UPDATE scans SET risk_json = '{'")
+        elif fault == "letter":
+            db.execute("UPDATE scans SET grade = 'Z'")
+        else:
+            trust_paths.mcptrust_seed.write_text("{")
+    grader = McpTrustGrader(trust_paths)
+    entry = _entry(name="mcp-reference-time")
+    try:
+        grade = grader.grade(entry)
+    finally:
+        grader.close()
+    report = build_report(
+        [GradedServer(entry=entry, risk=assess(entry, None, grade))],
+        host="fixture",
+        generated_at="",
+        source_counts={},
+    )
+    assert grade.grade == "unknown"
+    assert any(diagnostic in note for note in report.notes), report.notes
+
+
+def test_nonfinite_registry_score_returns_strict_json(fake_home, tmp_path, monkeypatch):
+    args = mcp_server._default_args(fake_home)
+    args.no_processes = args.no_mcpaudit = True
+    args.registry_db = str(tmp_path / "registry.db")
+    db = sqlite3.connect(args.registry_db)
+    db.execute("CREATE TABLE scans (server_slug, grade, transparency, risk_json, scanned_at)")
+    db.execute("""INSERT INTO scans VALUES ('github', 'A', NULL, '{"composite":1e309}', NULL)""")
+    db.commit()
+    db.close()
+    monkeypatch.setattr(
+        "shadow_mcp.grading.mcptrust._load_seed_index", lambda _: {"github": "github"}
+    )
+
+    def reject_constant(token):
+        raise ValueError(token)
+
+    for payload in (
+        mcp_server.scan_local_payload(args),
+        mcp_server.deep_scan_payload(["github"], args),
+    ):
+        report = json.loads(payload, parse_constant=reject_constant)
+        assert any("github" in note and "composite" in note for note in report["notes"])

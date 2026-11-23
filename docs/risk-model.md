@@ -90,6 +90,11 @@ Provenance is retained in the inventory, without a separate band modifier.
 
 ## Registry vs computed A-F grades
 
+A failed catalog or registry lookup, an invalid stored letter, or an unreadable
+risk score adds a diagnostic to `risk.mcptrust.error` and the report’s `notes`.
+A successful lookup with no matching row leaves `error` empty. A computed grade
+can still carry the registry diagnostic.
+
 mcp-trust only stores grades for servers someone has already scanned and seeded
 (a handful). Servers without a registry grade get a **computed** A-F letter
 when MCPAudit produces a usable grade and mcp-trust's grading logic is available: we

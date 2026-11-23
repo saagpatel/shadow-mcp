@@ -35,6 +35,10 @@ def build_report(
         key=lambda g: (-_BAND_RANK.get(g.risk.band, 0), g.entry.canonical_name.lower()),
     )
     notes = list(errors or [])
+    for server in graded:
+        trust = server.risk.mcptrust
+        if trust and trust.error:
+            notes.append(f"{server.entry.canonical_name}: {trust.error}")
     if any(g.risk.mcptrust and g.risk.mcptrust.computed for g in graded):
         notes.append(
             "Grades marked ~ are computed from MCPAudit static config-only "

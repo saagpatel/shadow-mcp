@@ -55,7 +55,11 @@ def grade_inventory(
                 letter = compute_trust_grade(audit)
                 if letter:
                     tg = McpTrustGrade(
-                        grade=letter, slug=tg.slug, computed=True, transparency="low"
+                        grade=letter,
+                        slug=tg.slug,
+                        computed=True,
+                        transparency="low",
+                        error=tg.error,
                     )
             graded.append(GradedServer(entry=entry, risk=assess(entry, audit, tg)))
         return graded
