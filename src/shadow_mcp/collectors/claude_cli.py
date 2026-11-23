@@ -102,4 +102,5 @@ class ClaudeCliCollector(PartialCollector):
         code, text = self.runner()
         if code != 0:
             errors.append(f"claude mcp list failed with exit status {code}")
+            return []
         return parse_claude_mcp_list(text, errors)

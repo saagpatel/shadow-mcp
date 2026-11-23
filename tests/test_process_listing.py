@@ -27,6 +27,16 @@ def test_valid_process_listing_without_servers(tmp_path):
     assert result.source_counts == {"process": 0}
 
 
+def test_failed_cli_stdout_is_not_a_roster(tmp_path):
+    result = discover_all(
+        DiscoveryPaths.default(tmp_path),
+        collectors=[ClaudeCliCollector(lambda: (1, "Error: configuration unavailable"))],
+    )
+    assert result.servers == []
+    assert result.source_counts == {"claude_cli": 0}
+    assert any("exit status 1" in error for error in result.errors)
+
+
 def test_empty_cli_roster_with_status_lines(tmp_path):
     text = "Checking MCP server health...\n\nNo MCP servers configured."
     result = discover_all(
