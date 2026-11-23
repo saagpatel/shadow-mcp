@@ -12,18 +12,20 @@ import tomllib
 from pathlib import Path
 from typing import Any
 
-from ..config import DiscoveryPaths
 from ..models import DiscoveredServer, Provenance, ServerSpec, SourceKind, Transport
+from ._common import ConfigCollector, read_config
 
 SOURCE: SourceKind = "codex"
 
 
 def _load_toml(path: Path) -> dict[str, Any] | None:
-    try:
-        with path.open("rb") as fh:
-            return tomllib.load(fh)
-    except (OSError, tomllib.TOMLDecodeError):
+    raw = read_config(path)
+    if raw is None:
         return None
+    try:
+        return tomllib.loads(raw.decode("utf-8"))
+    except ValueError as exc:
+        raise ValueError(f"{path}: invalid TOML ({type(exc).__name__})") from exc
 
 
 def _spec_from_table(table: dict[str, Any]) -> ServerSpec:
@@ -71,14 +73,15 @@ def _parse_file(path: Path, scope: str) -> list[DiscoveredServer]:
     return out
 
 
-class CodexCollector:
+class CodexCollector(ConfigCollector):
     source = SOURCE
 
-    def __init__(self, paths: DiscoveryPaths) -> None:
-        self.paths = paths
-
-    def collect(self) -> list[DiscoveredServer]:
-        out = _parse_file(self.paths.codex_config, scope="user")
-        for profile in self.paths.codex_profile_configs:
-            out.extend(_parse_file(profile, scope="profile"))
+    def collect_with_errors(self, errors: list[str]) -> list[DiscoveredServer]:
+        out: list[DiscoveredServer] = []
+        for path in (self.paths.codex_config, *self.paths.codex_profile_configs):
+            scope = "user" if path == self.paths.codex_config else "profile"
+            try:
+                out.extend(_parse_file(path, scope))
+            except (OSError, ValueError) as exc:
+                errors.append(str(exc))
         return out

@@ -11,6 +11,7 @@ from typing import Protocol
 
 from ..config import DiscoveryPaths
 from ..models import DiscoveredServer, SourceKind
+from ._common import ConfigCollector
 from .claude_cli import ClaudeCliCollector
 from .claude_code import ClaudeCodeCollector
 from .claude_desktop import ClaudeDesktopCollector
@@ -70,7 +71,12 @@ def discover_all(
     for col in cols:
         source = getattr(col, "source", col.__class__.__name__)
         try:
-            found = col.collect()
+            if isinstance(col, ConfigCollector):
+                errors: list[str] = []
+                found = col.collect_with_errors(errors)
+                result.errors.extend(f"{source}: {error}" for error in errors)
+            else:
+                found = col.collect()
         except Exception as exc:  # a collector must never break the sweep
             result.errors.append(f"{source}: {type(exc).__name__}: {exc}")
             continue
