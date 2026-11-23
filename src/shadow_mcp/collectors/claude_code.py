@@ -6,38 +6,43 @@ per-project ``projects.<path>.mcpServers`` (project scope).
 
 from __future__ import annotations
 
-from ..config import DiscoveryPaths
 from ..models import DiscoveredServer, SourceKind
-from ._common import load_json, parse_mcp_servers_block
+from ._common import ConfigCollector, load_json, parse_mcp_servers_block
 
 SOURCE: SourceKind = "claude_code"
 
 
-class ClaudeCodeCollector:
+class ClaudeCodeCollector(ConfigCollector):
     source = SOURCE
 
-    def __init__(self, paths: DiscoveryPaths) -> None:
-        self.paths = paths
-
-    def collect(self) -> list[DiscoveredServer]:
+    def collect_with_errors(self, errors: list[str]) -> list[DiscoveredServer]:
         data = load_json(self.paths.claude_json)
         if data is None:
             return []
         loc = str(self.paths.claude_json)
         out = parse_mcp_servers_block(
-            data.get("mcpServers"), source=SOURCE, location=loc, scope="user"
+            data.get("mcpServers", {}),
+            errors=errors,
+            source=SOURCE,
+            location=loc,
+            scope="user",
         )
-        projects = data.get("projects")
-        if isinstance(projects, dict):
-            for proj_path, proj in projects.items():
-                if not isinstance(proj, dict):
-                    continue
-                out.extend(
-                    parse_mcp_servers_block(
-                        proj.get("mcpServers"),
-                        source=SOURCE,
-                        location=f"{loc}#projects.{proj_path}",
-                        scope="project",
-                    )
+        projects = data.get("projects", {})
+        if not isinstance(projects, dict):
+            errors.append(f"{loc}: projects must be an object")
+            return out
+        for proj_path, proj in projects.items():
+            project_loc = f"{loc}#projects.{proj_path}"
+            if not isinstance(proj, dict):
+                errors.append(f"{project_loc}: project must be an object")
+                continue
+            out.extend(
+                parse_mcp_servers_block(
+                    proj.get("mcpServers", {}),
+                    errors=errors,
+                    source=SOURCE,
+                    location=project_loc,
+                    scope="project",
                 )
+            )
         return out

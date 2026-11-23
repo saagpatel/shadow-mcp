@@ -15,6 +15,7 @@ from ..models import (
     McpTrustGrade,
     RiskAssessment,
 )
+from ._score import risk_score
 
 _ORDER: list[Band] = ["unknown", "low", "medium", "high", "critical"]
 
@@ -43,6 +44,14 @@ def assess(
 ) -> RiskAssessment:
     reasons: list[str] = []
 
+    if mcpaudit is not None and risk_score(mcpaudit.composite) is None:
+        mcpaudit = mcpaudit.model_copy(
+            update={
+                "composite": 0.0,
+                "high_risk": False,
+                "error": mcpaudit.error or "invalid capability composite score",
+            }
+        )
     if mcpaudit is None or mcpaudit.error:
         band: Band = "unknown"
         if mcpaudit and mcpaudit.error:

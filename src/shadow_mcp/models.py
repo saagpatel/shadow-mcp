@@ -155,6 +155,7 @@ class McpTrustGrade(BaseModel):
     composite: float | None = None
     slug: str | None = None
     scanned_at: str | None = None
+    error: str | None = None
     computed: bool = False  # True = derived via mcp-trust grade() from MCPAudit dims,
     #                         not a persisted registry scan
 

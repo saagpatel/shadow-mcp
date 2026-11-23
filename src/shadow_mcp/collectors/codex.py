@@ -12,73 +12,103 @@ import tomllib
 from pathlib import Path
 from typing import Any
 
-from ..config import DiscoveryPaths
 from ..models import DiscoveredServer, Provenance, ServerSpec, SourceKind, Transport
+from ._common import ConfigCollector, read_config
 
 SOURCE: SourceKind = "codex"
 
 
 def _load_toml(path: Path) -> dict[str, Any] | None:
-    try:
-        with path.open("rb") as fh:
-            return tomllib.load(fh)
-    except (OSError, tomllib.TOMLDecodeError):
+    raw = read_config(path)
+    if raw is None:
         return None
+    try:
+        return tomllib.loads(raw.decode("utf-8"))
+    except (ValueError, RecursionError) as exc:
+        raise ValueError(f"{path}: invalid TOML ({type(exc).__name__})") from exc
 
 
 def _spec_from_table(table: dict[str, Any]) -> ServerSpec:
+    if not table:
+        raise ValueError("empty server declaration")
     command = table.get("command")
-    args_raw = table.get("args") or []
-    args = [str(a) for a in args_raw] if isinstance(args_raw, list) else []
     url = table.get("url")
-    env = table.get("env")
-    env_keys = sorted(env.keys()) if isinstance(env, dict) else []
-    transport: Transport = "stdio" if command else ("http" if url else "unknown")
+    args_raw = table.get("args", [])
+    env = table.get("env", {})
+    if command is not None and not isinstance(command, str):
+        raise ValueError("command must be a string")
+    if url is not None and not isinstance(url, str):
+        raise ValueError("url must be a string")
+    if command is not None and not command.strip():
+        raise ValueError("command must not be blank")
+    if url is not None and not url.strip():
+        raise ValueError("url must not be blank")
+    if not command and not url:
+        raise ValueError("server declaration requires a command or endpoint")
+    if not isinstance(args_raw, list) or not all(isinstance(arg, str) for arg in args_raw):
+        raise ValueError("args must be an array of strings")
+    if not isinstance(env, dict):
+        raise ValueError("env must be a table")
+    env_keys = sorted(env)
+    transport: Transport = "stdio" if command else "http"
     return ServerSpec(
         transport=transport,
-        command=str(command) if command else None,
-        args=args,
-        url=str(url) if url else None,
+        command=command or None,
+        args=args_raw,
+        url=url or None,
         env_keys=env_keys,
     )
 
 
-def _parse_file(path: Path, scope: str) -> list[DiscoveredServer]:
+def _parse_file(path: Path, scope: str, errors: list[str]) -> list[DiscoveredServer]:
     data = _load_toml(path)
-    if not data:
+    if data is None:
+        if scope == "profile":
+            errors.append(f"{path}: listed profile is missing")
         return []
     servers = data.get("mcp_servers")
-    if not isinstance(servers, dict):
+    if servers is None:
         return []
+    if not isinstance(servers, dict):
+        raise ValueError(f"{path}: mcp_servers must be a table")
     out: list[DiscoveredServer] = []
     for name, table in servers.items():
-        if not isinstance(table, dict):
+        try:
+            if not isinstance(table, dict):
+                raise ValueError("server declaration must be a table")
+            enabled = table.get("enabled")
+            if "enabled" in table and not isinstance(enabled, bool):
+                raise ValueError("enabled must be a boolean")
+            spec = _spec_from_table(table)
+        except ValueError as exc:
+            errors.append(f"{path}: {name}: {exc}")
             continue
-        enabled = table.get("enabled")
         out.append(
             DiscoveredServer(
                 name=str(name),
-                spec=_spec_from_table(table),
+                spec=spec,
                 provenance=Provenance(
                     source=SOURCE,
                     location=str(path),
                     scope=scope,
                     declared_name=str(name),
-                    enabled=enabled if isinstance(enabled, bool) else None,
+                    enabled=enabled,
                 ),
             )
         )
     return out
 
 
-class CodexCollector:
+class CodexCollector(ConfigCollector):
     source = SOURCE
 
-    def __init__(self, paths: DiscoveryPaths) -> None:
-        self.paths = paths
-
-    def collect(self) -> list[DiscoveredServer]:
-        out = _parse_file(self.paths.codex_config, scope="user")
-        for profile in self.paths.codex_profile_configs:
-            out.extend(_parse_file(profile, scope="profile"))
+    def collect_with_errors(self, errors: list[str]) -> list[DiscoveredServer]:
+        errors.extend(self.paths.codex_profile_errors)
+        out: list[DiscoveredServer] = []
+        for path in (self.paths.codex_config, *self.paths.codex_profile_configs):
+            scope = "user" if path == self.paths.codex_config else "profile"
+            try:
+                out.extend(_parse_file(path, scope, errors))
+            except (OSError, ValueError) as exc:
+                errors.append(str(exc))
         return out

@@ -1,8 +1,10 @@
+import json
 import os
 import sqlite3
 
 import pytest
 
+from shadow_mcp import mcp_server
 from shadow_mcp.config import GradingPaths
 from shadow_mcp.grading.combine import assess
 from shadow_mcp.grading.mcptrust import McpTrustGrader
@@ -39,6 +41,21 @@ def test_missing_engine_is_unknown_not_low():
     e = _entry()
     a = assess(e, McpAuditGrade(composite=0.0, high_risk=False, error="not installed"), None)
     assert a.band == "unknown"
+
+
+@pytest.mark.parametrize("composite", [float("nan"), float("inf"), -1.0, 11.0])
+def test_assess_rejects_invalid_composite(composite):
+    audit = McpAuditGrade(composite=composite, high_risk=False)
+    risk = assess(_entry(), audit, None)
+    assert risk.band == "unknown"
+    assert risk.headline == "UNKNOWN"
+    assert risk.mcpaudit.error and "composite" in risk.mcpaudit.error
+    json.dumps(risk.model_dump(mode="json"), allow_nan=False)
+
+    risk = assess(_entry(), audit, McpTrustGrade(grade="F"))
+    assert risk.band == "high"
+    assert risk.headline == "HIGH (trust F)"
+    assert audit.error is None
 
 
 def test_mcptrust_F_raises_band():
@@ -98,6 +115,53 @@ def test_mcptrust_resolves_seed_and_reads_grade(trust_paths):
     assert g.composite == 2.7
 
 
+@pytest.mark.parametrize("source", ["seed", "row"])
+def test_recursive_registry_json_keeps_available_evidence(trust_paths, source, monkeypatch):
+    document = "deeply nested fixture"
+    if source == "seed":
+        trust_paths.mcptrust_seed.write_text(document)
+    else:
+        with sqlite3.connect(trust_paths.mcptrust_registry_db) as db:
+            db.execute("UPDATE scans SET grade = 'F', risk_json = ?", (document,))
+
+    loads = json.loads
+
+    def decode(text):
+        if text == document:
+            raise RecursionError
+        return loads(text)
+
+    monkeypatch.setattr(json, "loads", decode)
+    grader = McpTrustGrader(trust_paths)
+    try:
+        grade = grader.grade(_entry(name="mcp-reference-time"))
+    finally:
+        grader.close()
+    assert grade.composite is None
+    if source == "seed":
+        assert grade.grade == "unknown"
+        assert grade.error and "seed catalog" in grade.error
+    else:
+        assert grade.grade == "F"
+        assert grade.error == "invalid registry risk_json"
+
+
+@pytest.mark.parametrize("composite", [11.0, -1.0, float("inf"), float("nan")])
+def test_mcptrust_invalid_composite_keeps_registry_grade(trust_paths, composite):
+    with sqlite3.connect(trust_paths.mcptrust_registry_db) as db:
+        db.execute("UPDATE scans SET risk_json = ?", (json.dumps({"composite": composite}),))
+
+    grader = McpTrustGrader(trust_paths)
+    grade = grader.grade(_entry(name="mcp-reference-time"))
+    grader.close()
+
+    assert grade.grade == "B"
+    assert grade.slug == "mcp-reference-time"
+    assert grade.transparency == "high"
+    assert grade.composite is None
+    assert grade.error == "invalid registry composite"
+
+
 def test_mcptrust_resolves_by_package_reference(trust_paths):
     grader = McpTrustGrader(trust_paths)
     e = _entry(name="whatever", command="npx")
@@ -124,11 +188,29 @@ def test_compute_trust_grade_maps_dimensions_to_letter():
     pytest.importorskip("mcp_trust")
     # high file_access -> danger-weighted -> low letter (D/F)
     risky = McpAuditGrade(
-        composite=7.7, high_risk=True, dimensions={"file_access": 8.0, "network_access": 2.0}
+        composite=7.7,
+        high_risk=True,
+        dimensions={
+            "file_access": 8.0,
+            "network_access": 2.0,
+            "shell_execution": 0.0,
+            "destructive": 0.0,
+            "exfiltration": 0.0,
+        },
     )
     assert compute_trust_grade(risky) in ("D", "F")
     # near-zero capability -> A
-    benign = McpAuditGrade(composite=0.0, high_risk=False, dimensions={"file_access": 0.0})
+    benign = McpAuditGrade(
+        composite=0.0,
+        high_risk=False,
+        dimensions={
+            "file_access": 0.0,
+            "network_access": 0.0,
+            "shell_execution": 0.0,
+            "destructive": 0.0,
+            "exfiltration": 0.0,
+        },
+    )
     assert compute_trust_grade(benign) == "A"
     # no usable audit -> no computed grade
     assert compute_trust_grade(None) is None
@@ -192,3 +274,84 @@ def test_grade_inventory_fills_unknown_with_computed(trust_paths):
     )
     assert graded[0].risk.mcptrust.grade == "unknown"
     assert graded[0].risk.mcptrust.computed is False
+
+
+@pytest.mark.parametrize(
+    "fault, diagnostic",
+    [("table", "lookup"), ("json", "risk_json"), ("letter", "grade"), ("seed", "catalog")],
+)
+def test_corrupt_registry_reports_diagnostic(trust_paths, fault, diagnostic):
+    from shadow_mcp.models import GradedServer
+    from shadow_mcp.report import build_report
+
+    with sqlite3.connect(trust_paths.mcptrust_registry_db) as db:
+        if fault == "table":
+            db.execute("DROP TABLE scans")
+        elif fault == "json":
+            db.execute("UPDATE scans SET risk_json = '{'")
+        elif fault == "letter":
+            db.execute("UPDATE scans SET grade = 'Z'")
+        else:
+            trust_paths.mcptrust_seed.write_text("{")
+    grader = McpTrustGrader(trust_paths)
+    entry = _entry(name="mcp-reference-time")
+    try:
+        grade = grader.grade(entry)
+    finally:
+        grader.close()
+    report = build_report(
+        [GradedServer(entry=entry, risk=assess(entry, None, grade))],
+        host="fixture",
+        generated_at="",
+        source_counts={},
+    )
+    assert grade.grade == ("B" if fault == "json" else "unknown")
+    assert any(diagnostic in note for note in report.notes), report.notes
+
+
+def test_missing_registry_composite_retains_danger_grade(trust_paths):
+    from shadow_mcp.grading import grade_inventory
+    from shadow_mcp.report import build_report
+
+    with sqlite3.connect(trust_paths.mcptrust_registry_db) as db:
+        db.execute("UPDATE scans SET grade = 'F', risk_json = '{}'")
+    graded = grade_inventory(
+        [_entry(name="mcp-reference-time")], grading_paths=trust_paths, compute_missing=True
+    )
+    report = build_report(graded, host="fixture", generated_at="", source_counts={})
+    risk = report.servers[0].risk
+    assert risk.headline == "MEDIUM (trust F, cap 0.0)"
+    trust = risk.mcptrust
+    assert trust.grade == "F" and trust.computed is False
+    assert trust.composite is None
+    assert (trust.slug, trust.transparency, trust.scanned_at) == (
+        "mcp-reference-time",
+        "high",
+        "2026-06-01T00:00:00",
+    )
+    assert trust.error and "composite" in trust.error
+    assert any(trust.error in note for note in report.notes)
+
+
+def test_nonfinite_registry_score_returns_strict_json(fake_home, tmp_path, monkeypatch):
+    args = mcp_server._default_args(fake_home)
+    args.no_processes = args.no_mcpaudit = True
+    args.registry_db = str(tmp_path / "registry.db")
+    db = sqlite3.connect(args.registry_db)
+    db.execute("CREATE TABLE scans (server_slug, grade, transparency, risk_json, scanned_at)")
+    db.execute("""INSERT INTO scans VALUES ('github', 'A', NULL, '{"composite":1e309}', NULL)""")
+    db.commit()
+    db.close()
+    monkeypatch.setattr(
+        "shadow_mcp.grading.mcptrust._load_seed_index", lambda _: {"github": "github"}
+    )
+
+    def reject_constant(token):
+        raise ValueError(token)
+
+    for payload in (
+        mcp_server.scan_local_payload(args),
+        mcp_server.deep_scan_payload(["github"], args),
+    ):
+        report = json.loads(payload, parse_constant=reject_constant)
+        assert any("github" in note and "composite" in note for note in report["notes"])

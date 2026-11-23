@@ -19,6 +19,7 @@ import subprocess
 from collections.abc import Callable
 
 from ..models import DiscoveredServer, Provenance, ServerSpec, SourceKind
+from ._common import PartialCollector
 
 SOURCE: SourceKind = "process"
 
@@ -207,19 +208,26 @@ def extract_identity(cmdline: str) -> str | None:
     return None
 
 
-def parse_ps_output(text: str) -> list[DiscoveredServer]:
+def parse_ps_output(text: str, errors: list[str] | None = None) -> list[DiscoveredServer]:
     # First pass: map pid -> command and pid -> ppid so we can walk parent chains.
     rows: list[tuple[str, str, str]] = []
     pid_cmd: dict[str, str] = {}
     pid_ppid: dict[str, str] = {}
-    for line in text.splitlines():
+    for number, line in enumerate(text.splitlines(), 1):
+        if not line.strip():
+            continue
         m = _PID_RE.match(line)
-        if not m:
+        if not m or not m.group(3).strip():
+            if errors is not None:
+                errors.append(f"malformed ps row {number}")
             continue
         pid, ppid, cmdline = m.group(1), m.group(2), m.group(3).strip()
         pid_cmd[pid] = cmdline
         pid_ppid[pid] = ppid
         rows.append((pid, ppid, cmdline))
+
+    if not rows:
+        raise ValueError("ps returned no parseable process rows")
 
     out: list[DiscoveredServer] = []
     seen: set[str] = set()  # one sighting per identity (processes spawn many PIDs)
@@ -256,14 +264,16 @@ def parse_ps_output(text: str) -> list[DiscoveredServer]:
     return out
 
 
-class ProcessCollector:
+class ProcessCollector(PartialCollector):
     source = SOURCE
 
     def __init__(self, runner: Runner | None = None) -> None:
         self.runner = runner or _default_runner
 
-    def collect(self) -> list[DiscoveredServer]:
+    def collect_with_errors(self, errors: list[str]) -> list[DiscoveredServer]:
         code, text = self.runner()
-        if code != 0 or not text.strip():
-            return []
-        return parse_ps_output(text)
+        if code != 0:
+            errors.append(f"ps failed with exit status {code}")
+            if not text.strip():
+                return []
+        return parse_ps_output(text, errors)

@@ -14,6 +14,7 @@ import subprocess
 from collections.abc import Callable
 
 from ..models import DiscoveredServer, Provenance, ServerSpec, SourceKind, Transport
+from ._common import PartialCollector
 
 SOURCE: SourceKind = "claude_cli"
 
@@ -21,7 +22,7 @@ Runner = Callable[[], "tuple[int, str]"]
 
 _URL_RE = re.compile(r"https?://\S+")
 # Trailing status decoration: " - ✓ Connected", " (HTTP)", " - Failed to connect"
-_STATUS_RE = re.compile(r"\s+-\s+.*$")
+_STATUS_RE = re.compile(r"(?:^|\s+)-\s+.*$")
 
 
 def _default_runner() -> tuple[int, str]:
@@ -40,22 +41,28 @@ def _default_runner() -> tuple[int, str]:
     return (proc.returncode, proc.stdout or "")
 
 
-def parse_claude_mcp_list(text: str) -> list[DiscoveredServer]:
+def parse_claude_mcp_list(text: str, errors: list[str] | None = None) -> list[DiscoveredServer]:
     """Parse ``claude mcp list`` output into DiscoveredServer records."""
     out: list[DiscoveredServer] = []
-    for line in text.splitlines():
+    for number, line in enumerate(text.splitlines(), 1):
         line = line.strip()
-        if not line or ":" not in line:
+        if (
+            not line
+            or line.rstrip(".…") == "Checking MCP server health"
+            or line.partition(".")[0] == "No MCP servers configured"
+        ):
             continue
         name, _, rest = line.partition(":")
         name = name.strip()
         rest = rest.strip()
-        if not name or not rest:
-            continue
         # drop a "- Connected" / "- Failed" status tail and any "(HTTP)" hint
         had_http_hint = "(http" in rest.lower()
         rest = _STATUS_RE.sub("", rest).strip()
         rest = re.sub(r"\((?:HTTP|SSE|STDIO)\)", "", rest, flags=re.IGNORECASE).strip()
+        if not name or not rest:
+            if errors is not None:
+                errors.append(f"malformed claude mcp list row {number}")
+            continue
 
         url_match = _URL_RE.search(rest)
         if url_match:
@@ -64,8 +71,6 @@ def parse_claude_mcp_list(text: str) -> list[DiscoveredServer]:
             spec = ServerSpec(transport=transport, url=url)
         else:
             tokens = rest.split()
-            if not tokens:
-                continue
             transport = "http" if had_http_hint else "stdio"
             spec = ServerSpec(
                 transport=transport,
@@ -87,14 +92,15 @@ def parse_claude_mcp_list(text: str) -> list[DiscoveredServer]:
     return out
 
 
-class ClaudeCliCollector:
+class ClaudeCliCollector(PartialCollector):
     source = SOURCE
 
     def __init__(self, runner: Runner | None = None) -> None:
         self.runner = runner or _default_runner
 
-    def collect(self) -> list[DiscoveredServer]:
+    def collect_with_errors(self, errors: list[str]) -> list[DiscoveredServer]:
         code, text = self.runner()
-        if code != 0 or not text.strip():
+        if code != 0:
+            errors.append(f"claude mcp list failed with exit status {code}")
             return []
-        return parse_claude_mcp_list(text)
+        return parse_claude_mcp_list(text, errors)

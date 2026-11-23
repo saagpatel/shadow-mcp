@@ -1,8 +1,11 @@
+import pytest
+
 from shadow_mcp.collectors import discover_all
 from shadow_mcp.collectors._common import parse_mcp_servers_block
 from shadow_mcp.collectors.claude_cli import parse_claude_mcp_list
 from shadow_mcp.collectors.claude_code import ClaudeCodeCollector
 from shadow_mcp.collectors.codex import CodexCollector
+from shadow_mcp.collectors.dxt import DxtCollector
 from shadow_mcp.collectors.processes import parse_ps_output
 
 
@@ -141,3 +144,63 @@ def test_parse_ps_output_climbs_past_launchers_to_real_owner():
     assert "hermes" in (by_name["notification-hub"].provenance.parent or "").lower()
     # the launchd-direct one stays standalone
     assert by_name["rogue-thing"].provenance.host_managed is False
+
+
+@pytest.mark.parametrize(
+    "collector, field", [(ClaudeCodeCollector, "command"), (DxtCollector, "mcp_config")]
+)
+def test_invalid_server_field_is_diagnosed(fake_paths, collector, field):
+    if collector is ClaudeCodeCollector:
+        fake_paths.claude_json.write_text('{"mcpServers":{"x":{"command":7}}}')
+    else:
+        fake_paths.claude_extensions_dir = fake_paths.home / "ext"
+        ext = fake_paths.claude_extensions_dir / "x"
+        ext.mkdir(parents=True)
+        (ext / "manifest.json").write_text('{"server":{"mcp_config":7}}')
+    result = discover_all(fake_paths, collectors=[collector(fake_paths)])
+    assert not result.servers
+    assert any("x" in err and field in err for err in result.errors)
+
+
+def test_invalid_entry_preserves_siblings(fake_paths):
+    fake_paths.claude_json.write_text(
+        '{"mcpServers":{"ok":{"command":"x"},"bad":{"type":7},"later":{"command":"y"}}}'
+    )
+    result = discover_all(fake_paths, collectors=[ClaudeCodeCollector(fake_paths)])
+    assert [s.name for s in result.servers] == ["ok", "later"]
+    assert result.source_counts == {"claude_code": 2}
+    assert any("bad" in error and "type" in error for error in result.errors)
+
+
+def test_codex_invalid_declarations_are_diagnosed_and_valid_siblings_counted(fake_paths):
+    fake_paths.codex_config.write_text(
+        "[mcp_servers]\n"
+        'valid = { command = "echo" }\n'
+        'scalar = "not a server table"\n'
+        "bad_command = { command = 7 }\n",
+        encoding="utf-8",
+    )
+
+    result = discover_all(fake_paths, collectors=[CodexCollector(fake_paths)])
+
+    assert [server.name for server in result.servers] == ["valid"]
+    assert result.source_counts == {"codex": 1}
+    assert any(
+        str(fake_paths.codex_config) in error and "scalar" in error for error in result.errors
+    )
+    assert any(
+        str(fake_paths.codex_config) in error and "bad_command" in error and "command" in error
+        for error in result.errors
+    )
+
+
+def test_discover_all_honors_injected_collect_override(fake_paths):
+    class EmptyClaudeCodeCollector(ClaudeCodeCollector):
+        def collect(self):
+            return []
+
+    result = discover_all(fake_paths, collectors=[EmptyClaudeCodeCollector(fake_paths)])
+
+    assert result.servers == []
+    assert result.source_counts == {"claude_code": 0}
+    assert result.errors == []

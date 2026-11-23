@@ -10,3 +10,9 @@ def test_package_versions_match_server_metadata() -> None:
     assert __version__ == version("shadow-mcp")
     assert metadata["version"] == __version__
     assert metadata["packages"][0]["version"] == __version__
+
+
+def test_readme_identifies_registry_metadata_and_tool_catalog() -> None:
+    readme = Path("README.md").read_text(encoding="utf-8")
+    assert "`tools/list`" in readme
+    assert "`server.json`" in readme

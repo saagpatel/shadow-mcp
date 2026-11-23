@@ -16,6 +16,7 @@ from pathlib import Path
 from ..config import GradingPaths
 from ..identity import normalize_name, normalize_url, signature
 from ..models import InventoryEntry, McpTrustGrade
+from ._score import risk_score
 
 
 def _strip_version(pkg: str) -> str:
@@ -28,13 +29,10 @@ def _strip_version(pkg: str) -> str:
 def _load_seed_index(seed_path: Path) -> dict[str, str]:
     """Map every plausible lookup key -> slug from the seed catalog."""
     index: dict[str, str] = {}
-    try:
-        raw = json.loads(seed_path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return index
-    servers = raw if isinstance(raw, list) else raw.get("servers", [])
+    raw = json.loads(seed_path.read_text(encoding="utf-8"))
+    servers = raw.get("servers") if isinstance(raw, dict) else raw
     if not isinstance(servers, list):
-        return index
+        raise ValueError("expected a list of catalog servers")
     for entry in servers:
         if not isinstance(entry, dict):
             continue
@@ -64,7 +62,12 @@ def _load_seed_index(seed_path: Path) -> dict[str, str]:
 class McpTrustGrader:
     def __init__(self, paths: GradingPaths | None = None) -> None:
         self.paths = paths or GradingPaths.default()
-        self.seed_index = _load_seed_index(self.paths.mcptrust_seed)
+        self._seed_error: str | None = None
+        try:
+            self.seed_index = _load_seed_index(self.paths.mcptrust_seed)
+        except (OSError, ValueError, RecursionError) as exc:
+            self.seed_index = {}
+            self._seed_error = f"unable to read mcp-trust seed catalog ({type(exc).__name__})"
         self._conn: sqlite3.Connection | None = None
         self._db_ok: bool | None = None
 
@@ -103,12 +106,14 @@ class McpTrustGrader:
         return None
 
     def grade(self, entry: InventoryEntry) -> McpTrustGrade:
+        if self._seed_error:
+            return McpTrustGrade(grade="unknown", error=self._seed_error)
         slug = self.resolve_slug(entry)
         if slug is None:
             return McpTrustGrade(grade="unknown")
         conn = self._connect()
         if conn is None:
-            return McpTrustGrade(grade="unknown", slug=slug)
+            return McpTrustGrade(grade="unknown", slug=slug, error="unable to open registry")
         try:
             cur = conn.execute(
                 "SELECT grade, transparency, risk_json, scanned_at "
@@ -116,21 +121,28 @@ class McpTrustGrader:
                 (slug,),
             )
             row = cur.fetchone()
-        except sqlite3.Error:
-            return McpTrustGrade(grade="unknown", slug=slug)
+        except sqlite3.Error as exc:
+            return McpTrustGrade(grade="unknown", slug=slug, error=f"registry lookup failed: {exc}")
         if row is None:
             return McpTrustGrade(grade="unknown", slug=slug)
         grade, transparency, risk_json, scanned_at = row
-        composite = None
-        if risk_json:
-            try:
-                composite = json.loads(risk_json).get("composite")
-            except (ValueError, AttributeError):
-                composite = None
+        if grade not in ("A", "B", "C", "D", "F"):
+            return McpTrustGrade(grade="unknown", slug=slug, error="invalid registry grade")
+        try:
+            risk = json.loads(risk_json)
+        except (TypeError, ValueError, RecursionError):
+            risk = None
+        if isinstance(risk, dict):
+            composite = risk_score(risk.get("composite"))
+            error = "invalid registry composite" if composite is None else None
+        else:
+            composite = None
+            error = "invalid registry risk_json"
         return McpTrustGrade(
-            grade=str(grade) if grade else "unknown",
+            grade=grade,
             transparency=str(transparency) if transparency else None,
-            composite=float(composite) if isinstance(composite, (int, float)) else None,
+            composite=composite,
             slug=slug,
             scanned_at=str(scanned_at) if scanned_at else None,
+            error=error,
         )

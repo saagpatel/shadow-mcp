@@ -8,9 +8,26 @@ macOS developer machine.
 from __future__ import annotations
 
 import os
+from collections.abc import Iterator
 from contextlib import suppress
 from dataclasses import dataclass, field
 from pathlib import Path
+
+
+def directory_entries(path: Path, errors: list[str], *, optional: bool = False) -> Iterator[Path]:
+    """List a discovery directory, retaining entries seen before a listing error."""
+    try:
+        entries = os.scandir(path)
+    except OSError as exc:
+        if not (optional and isinstance(exc, FileNotFoundError)):
+            errors.append(f"{path}: {exc.strerror or exc}")
+        return
+    with entries as iterator:
+        try:
+            for entry in iterator:
+                yield Path(entry.path)
+        except OSError as exc:
+            errors.append(f"{path}: {exc.strerror or exc}")
 
 
 def _installed_mcptrust_seed() -> Path | None:
@@ -45,12 +62,14 @@ class DiscoveryPaths:
     codex_profile_configs: list[Path] = field(default_factory=list)
     projects_root: Path | None = None
     project_glob_depth: int = 4  # cap recursion when hunting .mcp.json
+    codex_profile_errors: list[str] = field(default_factory=list)
 
     @classmethod
     def default(cls, home: Path | None = None) -> DiscoveryPaths:
         h = home or Path(os.environ.get("SHADOW_MCP_HOME", Path.home()))
         codex = h / ".codex"
         app_support = h / "Library" / "Application Support" / "Claude"
+        errors: list[str] = []
         return cls(
             home=h,
             claude_json=h / ".claude.json",
@@ -59,7 +78,12 @@ class DiscoveryPaths:
             codex_config=codex / "config.toml",
             # Any per-profile Codex config, not a hardcoded machine-specific
             # list. "*.config.toml" cannot match the main "config.toml".
-            codex_profile_configs=sorted(codex.glob("*.config.toml")),
+            codex_profile_configs=sorted(
+                p
+                for p in directory_entries(codex, errors, optional=True)
+                if p.name.endswith(".config.toml")
+            ),
+            codex_profile_errors=errors,
             projects_root=h / "Projects",
         )
 
