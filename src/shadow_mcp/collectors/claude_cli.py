@@ -95,6 +95,6 @@ class ClaudeCliCollector:
 
     def collect(self) -> list[DiscoveredServer]:
         code, text = self.runner()
-        if code != 0 or not text.strip():
-            return []
+        if code != 0:
+            raise ValueError(f"claude mcp list failed with exit status {code}")
         return parse_claude_mcp_list(text)
