@@ -65,7 +65,7 @@ class McpTrustGrader:
         self._seed_error: str | None = None
         try:
             self.seed_index = _load_seed_index(self.paths.mcptrust_seed)
-        except (OSError, ValueError) as exc:
+        except (OSError, ValueError, RecursionError) as exc:
             self.seed_index = {}
             self._seed_error = f"unable to read mcp-trust seed catalog ({type(exc).__name__})"
         self._conn: sqlite3.Connection | None = None
@@ -130,7 +130,7 @@ class McpTrustGrader:
             return McpTrustGrade(grade="unknown", slug=slug, error="invalid registry grade")
         try:
             risk = json.loads(risk_json)
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, RecursionError):
             risk = None
         if isinstance(risk, dict):
             composite = risk_score(risk.get("composite"))

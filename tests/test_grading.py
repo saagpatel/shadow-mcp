@@ -43,6 +43,21 @@ def test_missing_engine_is_unknown_not_low():
     assert a.band == "unknown"
 
 
+@pytest.mark.parametrize("composite", [float("nan"), float("inf"), -1.0, 11.0])
+def test_assess_rejects_invalid_composite(composite):
+    audit = McpAuditGrade(composite=composite, high_risk=False)
+    risk = assess(_entry(), audit, None)
+    assert risk.band == "unknown"
+    assert risk.headline == "UNKNOWN"
+    assert risk.mcpaudit.error and "composite" in risk.mcpaudit.error
+    json.dumps(risk.model_dump(mode="json"), allow_nan=False)
+
+    risk = assess(_entry(), audit, McpTrustGrade(grade="F"))
+    assert risk.band == "high"
+    assert risk.headline == "HIGH (trust F)"
+    assert audit.error is None
+
+
 def test_mcptrust_F_raises_band():
     e = _entry()
     base = assess(e, McpAuditGrade(composite=4.0, high_risk=False), None).band  # medium
@@ -98,6 +113,37 @@ def test_mcptrust_resolves_seed_and_reads_grade(trust_paths):
     assert g.grade == "B"
     assert g.slug == "mcp-reference-time"
     assert g.composite == 2.7
+
+
+@pytest.mark.parametrize("source", ["seed", "row"])
+def test_recursive_registry_json_keeps_available_evidence(trust_paths, source, monkeypatch):
+    document = "deeply nested fixture"
+    if source == "seed":
+        trust_paths.mcptrust_seed.write_text(document)
+    else:
+        with sqlite3.connect(trust_paths.mcptrust_registry_db) as db:
+            db.execute("UPDATE scans SET grade = 'F', risk_json = ?", (document,))
+
+    loads = json.loads
+
+    def decode(text):
+        if text == document:
+            raise RecursionError
+        return loads(text)
+
+    monkeypatch.setattr(json, "loads", decode)
+    grader = McpTrustGrader(trust_paths)
+    try:
+        grade = grader.grade(_entry(name="mcp-reference-time"))
+    finally:
+        grader.close()
+    assert grade.composite is None
+    if source == "seed":
+        assert grade.grade == "unknown"
+        assert grade.error and "seed catalog" in grade.error
+    else:
+        assert grade.grade == "F"
+        assert grade.error == "invalid registry risk_json"
 
 
 @pytest.mark.parametrize("composite", [11.0, -1.0, float("inf"), float("nan")])
