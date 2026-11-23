@@ -170,3 +170,37 @@ def test_invalid_entry_preserves_siblings(fake_paths):
     assert [s.name for s in result.servers] == ["ok", "later"]
     assert result.source_counts == {"claude_code": 2}
     assert any("bad" in error and "type" in error for error in result.errors)
+
+
+def test_codex_invalid_declarations_are_diagnosed_and_valid_siblings_counted(fake_paths):
+    fake_paths.codex_config.write_text(
+        "[mcp_servers]\n"
+        'valid = { command = "echo" }\n'
+        'scalar = "not a server table"\n'
+        "bad_command = { command = 7 }\n",
+        encoding="utf-8",
+    )
+
+    result = discover_all(fake_paths, collectors=[CodexCollector(fake_paths)])
+
+    assert [server.name for server in result.servers] == ["valid"]
+    assert result.source_counts == {"codex": 1}
+    assert any(
+        str(fake_paths.codex_config) in error and "scalar" in error for error in result.errors
+    )
+    assert any(
+        str(fake_paths.codex_config) in error and "bad_command" in error and "command" in error
+        for error in result.errors
+    )
+
+
+def test_discover_all_honors_injected_collect_override(fake_paths):
+    class EmptyClaudeCodeCollector(ClaudeCodeCollector):
+        def collect(self):
+            return []
+
+    result = discover_all(fake_paths, collectors=[EmptyClaudeCodeCollector(fake_paths)])
+
+    assert result.servers == []
+    assert result.source_counts == {"claude_code": 0}
+    assert result.errors == []

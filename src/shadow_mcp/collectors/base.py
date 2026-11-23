@@ -71,7 +71,10 @@ def discover_all(
     for col in cols:
         source = getattr(col, "source", col.__class__.__name__)
         try:
-            if isinstance(col, ConfigCollector):
+            if (
+                isinstance(col, ConfigCollector)
+                and getattr(col.collect, "__func__", None) is ConfigCollector.collect
+            ):
                 errors: list[str] = []
                 found = col.collect_with_errors(errors)
                 result.errors.extend(f"{source}: {error}" for error in errors)
