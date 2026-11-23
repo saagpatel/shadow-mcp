@@ -65,6 +65,11 @@ Useful flags: `--no-processes` (skip the live process scan), `--no-cli` (skip
 `claude mcp list`), `--no-mcpaudit` (inventory + mcp-trust only), `--home PATH`
 (point discovery at a fixture tree).
 
+Discovery reports include diagnostics in `notes` when configuration files cannot be read
+or parsed, a declaration is invalid, a listing fails, or the 200-file project search
+limit leaves work unvisited. Each JSON or TOML configuration file may contain up to
+16 MiB. Valid entries in a server map still contribute to its source count.
+
 ### Static vs connected grading
 
 By default grading is **static** (config-only): no server is spawned, so grades
@@ -120,12 +125,15 @@ query your local MCP surface without leaving the conversation.
 
 ### Tools
 
+`server.json` provides registry launch metadata. The running server’s `tools/list`
+response is the authoritative catalog of tool names, descriptions, and input schemas.
+
 | Tool | Description |
 |---|---|
 | `scan_local` | Full pipeline (discover → inventory → grade → report). Returns JSON. |
 | `discover_local` | Inventory every MCP server without grading. Returns JSON. |
 | `deep_scan` | Grade the named servers, or all servers when the list is empty (static, no spawning). Accepts `names: list[str]`. Returns JSON. |
-| `list_sources` | Per-collector source counts from a discover run. Returns JSON. |
+| `list_sources` | Returns per-collector counts as JSON on complete discovery. Incomplete discovery returns an MCP tool error with diagnostics. |
 
 ### Run the server
 
