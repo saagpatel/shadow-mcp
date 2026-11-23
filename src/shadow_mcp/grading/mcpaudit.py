@@ -12,6 +12,7 @@ import contextlib
 import io
 
 from ..models import McpAuditGrade, ServerSpec
+from ._score import finite_score
 
 
 @contextlib.contextmanager
@@ -85,8 +86,14 @@ def audit_to_grade(audit: dict, *, connected: bool = False) -> McpAuditGrade:
     Shared by the static (config-only) and connected scan paths so both surface
     the same shape.
     """
-    rs = audit.get("risk_score") or {}
-    composite = float(rs.get("composite") or 0.0)
+    rs = audit.get("risk_score")
+    if not isinstance(rs, dict):
+        rs = {}
+    composite = finite_score(rs.get("composite"))
+    if composite is None:
+        return McpAuditGrade(
+            composite=0.0, high_risk=False, error="missing or invalid capability composite"
+        )
     dims = {k: float(v) for k, v in rs.items() if k != "composite" and isinstance(v, (int, float))}
     tools = audit.get("tools")
     return McpAuditGrade(
