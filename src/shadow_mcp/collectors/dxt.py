@@ -7,57 +7,53 @@ distinct registration surface from the ``mcpServers`` block.
 
 from __future__ import annotations
 
-from ..config import DiscoveryPaths
+from pathlib import Path
+
 from ..models import DiscoveredServer, Provenance, SourceKind
-from ._common import infer_spec, load_json
+from ._common import ConfigCollector, infer_spec, load_json
 
 SOURCE: SourceKind = "dxt"
 
 
-class DxtCollector:
+class DxtCollector(ConfigCollector):
     source = SOURCE
 
-    def __init__(self, paths: DiscoveryPaths) -> None:
-        self.paths = paths
-
-    def collect(self) -> list[DiscoveredServer]:
+    def collect_with_errors(self, errors: list[str]) -> list[DiscoveredServer]:
         root = self.paths.claude_extensions_dir
         if not root.exists():
             return []
         out: list[DiscoveredServer] = []
-        try:
-            ext_dirs = [d for d in root.iterdir() if d.is_dir()]
-        except OSError:
-            return []
-        for ext in ext_dirs:
-            manifest = load_json(ext / "manifest.json")
-            if manifest is None:
-                continue
-            name = str(manifest.get("name") or ext.name)
-            server_value = manifest.get("server")
-            if not isinstance(server_value, dict):
-                continue
-            server: dict[str, object] = server_value
-            config_value = server.get("mcp_config")
-            raw: dict[str, object] = config_value if isinstance(config_value, dict) else server
-            # A DXT server type (node/python/binary) implies a stdio transport;
-            # inject it into the raw dict so infer_spec resolves it at construction
-            # (rather than mutating the validated model afterward).
-            if "type" not in raw and "transport" not in raw and not raw.get("url"):
-                stype = str(server.get("type") or "").lower()
-                if stype in ("node", "python", "binary"):
-                    raw = {**raw, "type": "stdio"}
-            spec = infer_spec(raw)
-            out.append(
-                DiscoveredServer(
-                    name=name,
-                    spec=spec,
-                    provenance=Provenance(
-                        source=SOURCE,
-                        location=str(ext / "manifest.json"),
-                        scope="desktop",
-                        declared_name=name,
-                    ),
-                )
-            )
+        for ext in root.iterdir():
+            if ext.is_dir():
+                try:
+                    server = _read_manifest(ext / "manifest.json")
+                except (OSError, ValueError) as exc:
+                    errors.append(f"{ext.name}: {exc}")
+                    continue
+                if server is not None:
+                    out.append(server)
         return out
+
+
+def _read_manifest(path: Path) -> DiscoveredServer | None:
+    manifest = load_json(path)
+    if manifest is None:
+        return None
+    name = str(manifest.get("name") or path.parent.name)
+    server = manifest.get("server")
+    if not isinstance(server, dict):
+        return None
+    raw = server.get("mcp_config", server)
+    if not isinstance(raw, dict):
+        raise ValueError(f"{name}: mcp_config must be an object")
+    # A DXT runtime type implies stdio when the config omits its transport.
+    if "type" not in raw and "transport" not in raw and not raw.get("url"):
+        if str(server.get("type") or "").lower() in ("node", "python", "binary"):
+            raw = {**raw, "type": "stdio"}
+    return DiscoveredServer(
+        name=name,
+        spec=infer_spec(raw),
+        provenance=Provenance(
+            source=SOURCE, location=str(path), scope="desktop", declared_name=name
+        ),
+    )
