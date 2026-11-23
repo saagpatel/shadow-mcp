@@ -29,19 +29,24 @@ class ProjectMcpJsonCollector(ConfigCollector):
         while stack and len(found) < _MAX_FILES:
             current = stack.pop()
             for entry in directory_entries(current, errors, optional=current == root):
+                config_name = entry.name in (".mcp.json", "mcp.json")
+                visit_dir = (
+                    len(entry.parts) - root_depth < self.paths.project_glob_depth
+                    and entry.name not in _SKIP_DIRS
+                    and (not entry.name.startswith(".") or entry.name in {".cursor", ".vscode"})
+                )
+                if not (config_name or visit_dir):
+                    continue
                 try:
                     if S_ISDIR(entry.stat().st_mode):
-                        if entry.name in _SKIP_DIRS or entry.name.startswith("."):
-                            if entry.name not in {".cursor", ".vscode"}:
-                                continue
-                        if len(entry.parts) - root_depth < self.paths.project_glob_depth:
+                        if visit_dir:
                             stack.append(entry)
-                    elif entry.name in (".mcp.json", "mcp.json"):
+                    elif config_name:
                         if len(found) == _MAX_FILES:
                             return found, True
                         found.append(entry)
                 except FileNotFoundError:  # dangling symlink or removed while walking
-                    if entry.name in (".mcp.json", "mcp.json"):
+                    if config_name:
                         errors.append(f"{entry}: listed configuration is missing")
                     continue
                 except OSError as exc:

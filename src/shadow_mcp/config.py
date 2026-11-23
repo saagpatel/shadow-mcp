@@ -17,9 +17,16 @@ from pathlib import Path
 def directory_entries(path: Path, errors: list[str], *, optional: bool = False) -> Iterator[Path]:
     """List a discovery directory, retaining entries seen before a listing error."""
     try:
-        yield from path.iterdir()
+        entries = os.scandir(path)
     except OSError as exc:
         if not (optional and isinstance(exc, FileNotFoundError)):
+            errors.append(f"{path}: {exc.strerror or exc}")
+        return
+    with entries as iterator:
+        try:
+            for entry in iterator:
+                yield Path(entry.path)
+        except OSError as exc:
             errors.append(f"{path}: {exc.strerror or exc}")
 
 
