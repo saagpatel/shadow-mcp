@@ -16,7 +16,7 @@ class ClaudeDesktopCollector(ConfigCollector):
         if data is None:
             return []
         return parse_mcp_servers_block(
-            data.get("mcpServers"),
+            data.get("mcpServers", {}),
             errors=errors,
             source=SOURCE,
             location=str(self.paths.claude_desktop_config),

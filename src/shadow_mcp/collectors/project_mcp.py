@@ -7,6 +7,7 @@ whole disk, and we skip the usual heavy directories.
 from __future__ import annotations
 
 from pathlib import Path
+from stat import S_ISDIR
 
 from ..models import DiscoveredServer, SourceKind
 from ._common import ConfigCollector, load_json, parse_mcp_servers_block
@@ -20,7 +21,7 @@ _MAX_FILES = 200  # hard cap so a pathological tree can't stall discovery
 class ProjectMcpJsonCollector(ConfigCollector):
     source = SOURCE
 
-    def _find_files(self, root: Path) -> tuple[list[Path], bool]:
+    def _find_files(self, root: Path, errors: list[str]) -> tuple[list[Path], bool]:
         found: list[Path] = []
         root_depth = len(root.parts)
         stack = [root]
@@ -28,11 +29,13 @@ class ProjectMcpJsonCollector(ConfigCollector):
             current = stack.pop()
             try:
                 entries = list(current.iterdir())
-            except OSError:
+            except OSError as exc:
+                if current != root or not isinstance(exc, FileNotFoundError):
+                    errors.append(f"{current}: {exc.strerror or exc}")
                 continue
             for entry in entries:
                 try:
-                    if entry.is_dir():
+                    if S_ISDIR(entry.stat().st_mode):
                         if entry.name in _SKIP_DIRS or entry.name.startswith("."):
                             if entry.name not in {".cursor", ".vscode"}:
                                 continue
@@ -42,16 +45,18 @@ class ProjectMcpJsonCollector(ConfigCollector):
                         if len(found) == _MAX_FILES:
                             return found, True
                         found.append(entry)
-                except OSError:
+                except FileNotFoundError:  # dangling symlink or removed while walking
                     continue
+                except OSError as exc:
+                    errors.append(f"{entry}: {exc.strerror or exc}")
         return found, bool(stack)
 
     def collect_with_errors(self, errors: list[str]) -> list[DiscoveredServer]:
         root = self.paths.projects_root
-        if root is None or not root.exists():
+        if root is None:
             return []
         out: list[DiscoveredServer] = []
-        files, truncated = self._find_files(root)
+        files, truncated = self._find_files(root, errors)
         if truncated:
             errors.append(f"{root}: project discovery incomplete at {_MAX_FILES}-file limit")
         for f in files:
@@ -64,7 +69,7 @@ class ProjectMcpJsonCollector(ConfigCollector):
                 continue
             out.extend(
                 parse_mcp_servers_block(
-                    data.get("mcpServers"),
+                    data.get("mcpServers", {}),
                     errors=errors,
                     source=SOURCE,
                     location=str(f),

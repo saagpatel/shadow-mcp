@@ -21,7 +21,11 @@ class ClaudeCodeCollector(ConfigCollector):
             return []
         loc = str(self.paths.claude_json)
         out = parse_mcp_servers_block(
-            data.get("mcpServers"), errors=errors, source=SOURCE, location=loc, scope="user"
+            data.get("mcpServers", {}),
+            errors=errors,
+            source=SOURCE,
+            location=loc,
+            scope="user",
         )
         projects = data.get("projects")
         if isinstance(projects, dict):
@@ -30,7 +34,7 @@ class ClaudeCodeCollector(ConfigCollector):
                     continue
                 out.extend(
                     parse_mcp_servers_block(
-                        proj.get("mcpServers"),
+                        proj.get("mcpServers", {}),
                         errors=errors,
                         source=SOURCE,
                         location=f"{loc}#projects.{proj_path}",

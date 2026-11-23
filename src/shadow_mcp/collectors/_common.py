@@ -139,6 +139,10 @@ def parse_mcp_servers_block(
 ) -> list[DiscoveredServer]:
     """Turn a ``mcpServers`` map into DiscoveredServer records."""
     if not isinstance(block, dict):
+        message = f"{location}: mcpServers must be an object"
+        if errors is None:
+            raise ValueError(message)
+        errors.append(message)
         return []
     base_dir = _config_base_dir(location)
     out: list[DiscoveredServer] = []

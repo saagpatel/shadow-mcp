@@ -40,9 +40,11 @@ def _read_manifest(path: Path) -> DiscoveredServer | None:
     if manifest is None:
         return None
     name = str(manifest.get("name") or path.parent.name)
+    if "server" not in manifest:
+        return None
     server = manifest.get("server")
     if not isinstance(server, dict):
-        return None
+        raise ValueError(f"{path}: server must be an object")
     raw = server.get("mcp_config", server)
     if not isinstance(raw, dict):
         raise ValueError(f"{name}: mcp_config must be an object")

@@ -6,6 +6,8 @@ import json
 import subprocess
 from pathlib import Path
 
+import pytest
+
 from shadow_mcp import mcp_server
 from shadow_mcp.cli import build_parser
 
@@ -106,23 +108,64 @@ def test_default_payloads_do_not_run_claude_cli(fake_home, monkeypatch) -> None:
 
 
 def test_list_sources_rejects_incomplete_counts(fake_home, tmp_path, monkeypatch):
-    import asyncio
-
-    from mcp.shared.memory import create_connected_server_and_client_session
-
     (fake_home / ".claude.json").write_text(
         '{"mcpServers":{"ok":{"command":"x"},"bad":{"type":7}}}'
     )
     args = _test_args(fake_home, tmp_path)
     monkeypatch.setattr(mcp_server, "_default_args", lambda: args)
 
+    result = _call_registered_list_sources()
+    assert result.isError
+    assert "claude_code" in result.content[0].text and "bad" in result.content[0].text
+
+
+@pytest.mark.parametrize(
+    ("relative_path", "source", "contents", "malformed"),
+    [
+        (".claude.json", "claude_code", '{"mcpServers": []}', True),
+        (
+            "Library/Application Support/Claude/Claude Extensions/malformed/manifest.json",
+            "dxt",
+            '{"name":"malformed","server":7}',
+            True,
+        ),
+        (".claude.json", "claude_code", "{}", False),
+        (
+            "Library/Application Support/Claude/Claude Extensions/missing/manifest.json",
+            "dxt",
+            '{"name":"missing"}',
+            False,
+        ),
+    ],
+)
+def test_registered_list_sources_rejects_malformed_declaration_containers(
+    fake_home, tmp_path, monkeypatch, relative_path, source, contents, malformed
+):
+    config_path = fake_home / relative_path
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    config_path.write_text(contents)
+
+    args = _test_args(fake_home, tmp_path)
+    monkeypatch.setattr(mcp_server, "_default_args", lambda: args)
+
+    result = _call_registered_list_sources()
+    assert result.isError is malformed
+    if malformed:
+        message = result.content[0].text
+        assert source in message
+        assert str(config_path) in message
+
+
+def _call_registered_list_sources():
+    import asyncio
+
+    from mcp.shared.memory import create_connected_server_and_client_session
+
     async def call():
         async with create_connected_server_and_client_session(mcp_server.build_server()) as client:
             return await client.call_tool("list_sources", {})
 
-    result = asyncio.run(call())
-    assert result.isError
-    assert "claude_code" in result.content[0].text and "bad" in result.content[0].text
+    return asyncio.run(call())
 
 
 def test_registered_deep_scan_describes_empty_names():

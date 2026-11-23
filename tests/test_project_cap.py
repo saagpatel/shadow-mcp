@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pytest
 
 from shadow_mcp.collectors import discover_all
@@ -20,6 +22,27 @@ def test_project_cap_reports_unvisited_directories(tmp_path, manifests):
         )
     else:
         assert result.errors == []
+
+
+def test_project_walk_reports_denied_directory_and_keeps_readable_sibling(tmp_path, monkeypatch):
+    paths = DiscoveryPaths.default(tmp_path)
+    denied = paths.projects_root / "denied"
+    readable = paths.projects_root / "readable"
+    denied.mkdir(parents=True)
+    readable.mkdir()
+    (readable / ".mcp.json").write_text('{"mcpServers":{"visible":{"command":"x"}}}')
+    iterdir = Path.iterdir
+
+    def list_directory(path):
+        if path == denied:
+            raise PermissionError("permission denied")
+        return iterdir(path)
+
+    monkeypatch.setattr(Path, "iterdir", list_directory)
+    result = discover_all(paths, collectors=[ProjectMcpJsonCollector(paths)])
+    assert [server.name for server in result.servers] == ["visible"]
+    assert result.source_counts == {"project_mcp_json": 1}
+    assert any("project_mcp_json" in err and str(denied) in err for err in result.errors)
 
 
 def test_bad_config_files_preserve_other_files(fake_paths):
