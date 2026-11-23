@@ -132,15 +132,17 @@ class McpTrustGrader:
             risk = json.loads(risk_json)
         except (TypeError, ValueError):
             risk = None
-        if not isinstance(risk, dict):
-            return McpTrustGrade(grade="unknown", slug=slug, error="invalid registry risk_json")
-        composite = finite_score(risk.get("composite"))
-        if composite is None:
-            return McpTrustGrade(grade="unknown", slug=slug, error="invalid registry composite")
+        if isinstance(risk, dict):
+            composite = finite_score(risk.get("composite"))
+            error = "invalid registry composite" if composite is None else None
+        else:
+            composite = None
+            error = "invalid registry risk_json"
         return McpTrustGrade(
             grade=grade,
             transparency=str(transparency) if transparency else None,
             composite=composite,
             slug=slug,
             scanned_at=str(scanned_at) if scanned_at else None,
+            error=error,
         )

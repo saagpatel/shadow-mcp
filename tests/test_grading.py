@@ -225,8 +225,32 @@ def test_corrupt_registry_reports_diagnostic(trust_paths, fault, diagnostic):
         generated_at="",
         source_counts={},
     )
-    assert grade.grade == "unknown"
+    assert grade.grade == ("B" if fault == "json" else "unknown")
     assert any(diagnostic in note for note in report.notes), report.notes
+
+
+def test_missing_registry_composite_retains_danger_grade(trust_paths):
+    from shadow_mcp.grading import grade_inventory
+    from shadow_mcp.report import build_report
+
+    with sqlite3.connect(trust_paths.mcptrust_registry_db) as db:
+        db.execute("UPDATE scans SET grade = 'F', risk_json = '{}'")
+    graded = grade_inventory(
+        [_entry(name="mcp-reference-time")], grading_paths=trust_paths, compute_missing=True
+    )
+    report = build_report(graded, host="fixture", generated_at="", source_counts={})
+    risk = report.servers[0].risk
+    assert risk.headline == "MEDIUM (trust F, cap 0.0)"
+    trust = risk.mcptrust
+    assert trust.grade == "F" and trust.computed is False
+    assert trust.composite is None
+    assert (trust.slug, trust.transparency, trust.scanned_at) == (
+        "mcp-reference-time",
+        "high",
+        "2026-06-01T00:00:00",
+    )
+    assert trust.error and "composite" in trust.error
+    assert any(trust.error in note for note in report.notes)
 
 
 def test_nonfinite_registry_score_returns_strict_json(fake_home, tmp_path, monkeypatch):
