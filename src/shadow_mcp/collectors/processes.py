@@ -217,9 +217,14 @@ def parse_ps_output(text: str) -> list[DiscoveredServer]:
         if not m:
             continue
         pid, ppid, cmdline = m.group(1), m.group(2), m.group(3).strip()
+        if not cmdline:
+            continue
         pid_cmd[pid] = cmdline
         pid_ppid[pid] = ppid
         rows.append((pid, ppid, cmdline))
+
+    if not rows:
+        raise ValueError("ps returned no parseable process rows")
 
     out: list[DiscoveredServer] = []
     seen: set[str] = set()  # one sighting per identity (processes spawn many PIDs)
@@ -264,6 +269,6 @@ class ProcessCollector:
 
     def collect(self) -> list[DiscoveredServer]:
         code, text = self.runner()
-        if code != 0 or not text.strip():
-            return []
+        if code != 0:
+            raise ValueError(f"ps failed with exit status {code}")
         return parse_ps_output(text)
