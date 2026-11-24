@@ -16,17 +16,26 @@ def test_invalid_capability_score_is_unavailable(audit):
 
 
 @pytest.mark.parametrize(
-    "risk_score",
-    [
-        {"composite": 1.0, "file_access": float("nan")},
-        {"composite": -1.0, "file_access": 1.0},
-        {"composite": 1.0, "file_access": 11.0},
-    ],
+    ("key", "value"),
+    [("file_access", float("nan")), ("composite", -1.0), ("file_access", 11.0)],
 )
-def test_out_of_range_or_nonfinite_scores_make_grade_unavailable(risk_score):
-    grade = audit_to_grade({"risk_score": risk_score})
+def test_out_of_range_or_nonfinite_scores_make_grade_unavailable(key, value):
+    score = dict.fromkeys(
+        (
+            "composite",
+            "file_access",
+            "network_access",
+            "shell_execution",
+            "destructive",
+            "exfiltration",
+        ),
+        0.0,
+    )
+    score[key] = value
+    grade = audit_to_grade({"risk_score": score})
 
-    assert grade.error and "score" in grade.error
+    assert grade.error and key in grade.error
+    assert not grade.dimensions
 
 
 def test_connected_invalid_score_preserves_successful_connection(monkeypatch):
