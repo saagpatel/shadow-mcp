@@ -128,6 +128,9 @@ def audit_to_grade(audit: object, *, connected: bool = False) -> McpAuditGrade:
         if score is None:
             return unavailable(f"invalid capability score dimension {key}")
         dims[key] = score
+    required = {"file_access", "network_access", "shell_execution", "destructive", "exfiltration"}
+    if not required.issubset(dims):
+        return unavailable("missing required capability score dimension")
 
     return McpAuditGrade(
         composite=composite,

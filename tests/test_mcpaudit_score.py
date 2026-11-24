@@ -53,3 +53,29 @@ def test_connected_invalid_score_preserves_successful_connection(monkeypatch):
     assert grade.connected is True
     assert grade.connection_status == "connected"
     assert grade.tool_count == 1
+
+
+@pytest.mark.parametrize(
+    "missing",
+    [None, "file_access", "network_access", "shell_execution", "destructive", "exfiltration"],
+)
+def test_assessment_requires_all_provider_dimensions(missing):
+    score = {
+        "composite": 0,
+        "file_access": 0,
+        "network_access": 0,
+        "shell_execution": 0,
+        "destructive": 0,
+        "exfiltration": 0,
+    }
+    if missing:
+        del score[missing]
+    grade = audit_to_grade(
+        {"risk_score": score, "connection_status": "connected", "tools": []}, connected=True
+    )
+    entry = InventoryEntry(
+        identity="cmd:fixture", canonical_name="fixture", spec=ServerSpec(command="fixture")
+    )
+    assert grade.connected and grade.connection_status == "connected" and grade.tool_count == 0
+    assert assess(entry, grade, None).headline == ("UNKNOWN" if missing else "LOW (cap 0.0)")
+    assert bool(grade.error) == bool(missing)
