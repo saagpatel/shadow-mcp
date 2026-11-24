@@ -66,6 +66,8 @@ def list_sources_payload(_args: argparse.Namespace | None = None) -> str:
         include_processes=not args.no_processes,
         include_cli=not args.no_cli,
     )
+    if result.errors:
+        raise ValueError("Incomplete discovery: " + "; ".join(result.errors))
     return json.dumps(result.source_counts, indent=2)
 
 

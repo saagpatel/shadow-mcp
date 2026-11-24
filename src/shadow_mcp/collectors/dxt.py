@@ -25,10 +25,7 @@ class DxtCollector:
         if not root.exists():
             return []
         out: list[DiscoveredServer] = []
-        try:
-            ext_dirs = [d for d in root.iterdir() if d.is_dir()]
-        except OSError:
-            return []
+        ext_dirs = [d for d in root.iterdir() if d.is_dir()]
         for ext in ext_dirs:
             manifest = load_json(ext / "manifest.json")
             if manifest is None:
