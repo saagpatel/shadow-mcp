@@ -11,11 +11,13 @@ from shadow_mcp.config import DiscoveryPaths
     [
         (ProcessCollector, (1, ""), "1"),
         (ProcessCollector, (0, "incomplete"), "rows"),
+        (ProcessCollector, (0, "101 1   "), "rows"),
         (ClaudeCliCollector, (2, ""), "2"),
     ],
 )
 def test_failed_listing_reports_source(tmp_path, collector, reply, diagnostic):
     result = discover_all(DiscoveryPaths.default(tmp_path), collectors=[collector(lambda: reply)])
+    assert collector.source not in result.source_counts
     assert result.errors, result.source_counts
     assert collector.source in result.errors[0] and diagnostic in result.errors[0]
 

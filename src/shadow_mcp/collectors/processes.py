@@ -217,6 +217,8 @@ def parse_ps_output(text: str) -> list[DiscoveredServer]:
         if not m:
             continue
         pid, ppid, cmdline = m.group(1), m.group(2), m.group(3).strip()
+        if not cmdline:
+            continue
         pid_cmd[pid] = cmdline
         pid_ppid[pid] = ppid
         rows.append((pid, ppid, cmdline))
