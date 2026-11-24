@@ -8,8 +8,10 @@ discovery still works.
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import io
+from concurrent.futures import ThreadPoolExecutor
 
 from ..models import McpAuditGrade, ServerSpec
 from ._score import risk_score
@@ -152,7 +154,15 @@ def grade_mcpaudit(name: str, spec: ServerSpec) -> McpAuditGrade:
     config = {"mcpServers": {name: _to_client_spec(spec)}}
     try:
         with muffle_stdout():
-            report = scan_config_only_dict(config, redact=False)
+            try:
+                asyncio.get_running_loop()
+            except RuntimeError:
+                report = scan_config_only_dict(config, redact=False)
+            else:
+                # The synchronous engine owns its event loop. Keep the caller's
+                # stdout capture in force until the worker has actually finished.
+                with ThreadPoolExecutor(max_workers=1) as worker:
+                    report = worker.submit(scan_config_only_dict, config, redact=False).result()
     except Exception as exc:  # never let the engine break discovery
         return McpAuditGrade(composite=0.0, high_risk=False, error=f"{type(exc).__name__}: {exc}")
 
