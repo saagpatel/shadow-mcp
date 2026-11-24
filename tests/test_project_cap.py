@@ -57,10 +57,12 @@ def test_project_walk_skips_excluded_names_before_stat(tmp_path, monkeypatch):
     ):
         directory.mkdir(exist_ok=True)
         (directory / ".mcp.json").write_text('{"mcpServers":{"visible":{"command":"x"}}}')
+    excluded_calls = []
     stat = Path.stat
 
     def deny_excluded(path, *args, **kwargs):
         if path == excluded:
+            excluded_calls.append(path)
             raise PermissionError("permission denied")
         return stat(path, *args, **kwargs)
 
@@ -68,3 +70,44 @@ def test_project_walk_skips_excluded_names_before_stat(tmp_path, monkeypatch):
     result = discover_all(paths, collectors=[ProjectMcpJsonCollector(paths)])
     assert result.errors == []
     assert result.source_counts == {"project_mcp_json": 3}
+    assert excluded_calls == []
+
+
+def test_final_directory_with_two_manifests_respects_cap(tmp_path, monkeypatch):
+    monkeypatch.setattr("shadow_mcp.collectors.project_mcp._MAX_FILES", 1)
+    paths = DiscoveryPaths.default(tmp_path)
+    paths.projects_root.mkdir(parents=True)
+    for name in [".mcp.json", "mcp.json"]:
+        (paths.projects_root / name).write_text('{"mcpServers":{"entry":{"command":"x"}}}')
+    result = discover_all(paths, collectors=[ProjectMcpJsonCollector(paths)])
+    assert len(result.servers) == 1
+    assert result.source_counts == {"project_mcp_json": 1}
+    assert any("limit" in err for err in result.errors)
+
+
+def test_mid_listing_error_retains_manifest(tmp_path, monkeypatch):
+    paths = DiscoveryPaths.default(tmp_path)
+    root = paths.projects_root
+    root.mkdir(parents=True)
+    (root / ".mcp.json").write_text('{"mcpServers":{"visible":{"command":"x"}}}')
+    scandir = os.scandir
+
+    class InterruptedListing:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, value, traceback):
+            return None
+
+        def __iter__(self):
+            with scandir(root) as entries:
+                yield next(entries)
+            raise OSError("listing interrupted")
+
+    monkeypatch.setattr(
+        os, "scandir", lambda path: InterruptedListing() if path == root else scandir(path)
+    )
+    result = discover_all(paths, collectors=[ProjectMcpJsonCollector(paths)])
+    assert [s.name for s in result.servers] == ["visible"]
+    assert result.source_counts == {"project_mcp_json": 1}
+    assert any(str(root) in err and "listing interrupted" in err for err in result.errors)
