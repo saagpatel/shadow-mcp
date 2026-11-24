@@ -12,6 +12,7 @@ import contextlib
 import io
 
 from ..models import McpAuditGrade, ServerSpec
+from ._score import risk_score
 
 
 @contextlib.contextmanager
@@ -79,24 +80,66 @@ def _extract_findings(audit: dict) -> list[dict]:
     return out[:8]
 
 
-def audit_to_grade(audit: dict, *, connected: bool = False) -> McpAuditGrade:
+def audit_to_grade(audit: object, *, connected: bool = False) -> McpAuditGrade:
     """Parse one MCPAudit ServerAudit dict into our McpAuditGrade.
 
     Shared by the static (config-only) and connected scan paths so both surface
     the same shape.
     """
-    rs = audit.get("risk_score") or {}
-    composite = float(rs.get("composite") or 0.0)
-    dims = {k: float(v) for k, v in rs.items() if k != "composite" and isinstance(v, (int, float))}
+    if not isinstance(audit, dict):
+        return McpAuditGrade(
+            composite=0.0,
+            high_risk=False,
+            connected=connected,
+            error="invalid MCPAudit audit record",
+        )
+    raw_connection_status = audit.get("connection_status")
+    connection_status = raw_connection_status if isinstance(raw_connection_status, str) else None
     tools = audit.get("tools")
+    tool_count = len(tools) if isinstance(tools, list) else None
+
+    def unavailable(error: str) -> McpAuditGrade:
+        return McpAuditGrade(
+            composite=0.0,
+            high_risk=False,
+            error=error,
+            connected=connected,
+            connection_status=connection_status,
+            tool_count=tool_count,
+        )
+
+    if raw_connection_status is not None and connection_status is None:
+        return unavailable("invalid MCPAudit connection status")
+
+    rs = audit.get("risk_score")
+    if not isinstance(rs, dict):
+        rs = {}
+
+    composite = risk_score(rs.get("composite"))
+    if composite is None:
+        return unavailable("missing or invalid capability composite score")
+    dims: dict[str, float] = {}
+    for key, value in rs.items():
+        if key == "composite":
+            continue
+        if not isinstance(key, str):
+            return unavailable("invalid capability score dimension name")
+        score = risk_score(value)
+        if score is None:
+            return unavailable(f"invalid capability score dimension {key}")
+        dims[key] = score
+    required = {"file_access", "network_access", "shell_execution", "destructive", "exfiltration"}
+    if not required.issubset(dims):
+        return unavailable("missing required capability score dimension")
+
     return McpAuditGrade(
         composite=composite,
         high_risk=composite >= 7.0,
         findings=_extract_findings(audit),
         dimensions=dims,
         connected=connected,
-        connection_status=audit.get("connection_status"),
-        tool_count=len(tools) if isinstance(tools, list) else None,
+        connection_status=connection_status,
+        tool_count=tool_count,
     )
 
 
