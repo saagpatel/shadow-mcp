@@ -95,7 +95,9 @@ def test_default_payloads_do_not_run_claude_cli(fake_home, monkeypatch) -> None:
         if command and command[0] == "claude":
             raise AssertionError("MCP payloads must not run claude mcp list")
         if command and command[0] == "ps":
-            return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+            return subprocess.CompletedProcess(
+                command, 0, stdout="101 1 ordinary-fixture", stderr=""
+            )
         raise AssertionError(f"unexpected subprocess command: {command}")
 
     monkeypatch.setattr(subprocess, "run", fail_if_claude_mcp_list)
@@ -166,3 +168,31 @@ def test_registered_static_tools_grade_in_an_event_loop(fake_home, tmp_path, mon
             assert grade["connected"] is False
     print("caller-output")
     assert capsys.readouterr().out == "caller-output\n"
+
+
+def test_registered_sources_surfaces_unreadable_extension_root(fake_home, tmp_path, monkeypatch):
+    import asyncio
+
+    from mcp.shared.memory import create_connected_server_and_client_session
+
+    from shadow_mcp.config import DiscoveryPaths
+
+    args = _test_args(fake_home, tmp_path)
+    monkeypatch.setattr(mcp_server, "_default_args", lambda: args)
+    root = DiscoveryPaths.default(fake_home).claude_extensions_dir
+    real_iterdir = Path.iterdir
+
+    def list_directory(path):
+        if path == root:
+            raise PermissionError("fixture denied")
+        return real_iterdir(path)
+
+    monkeypatch.setattr(Path, "iterdir", list_directory)
+
+    async def call():
+        async with create_connected_server_and_client_session(mcp_server.build_server()) as client:
+            return await client.call_tool("list_sources", {})
+
+    result = asyncio.run(call())
+    assert result.isError
+    assert "dxt" in result.content[0].text and "fixture denied" in result.content[0].text
