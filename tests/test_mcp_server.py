@@ -95,7 +95,7 @@ def test_default_payloads_do_not_run_claude_cli(fake_home, monkeypatch) -> None:
         if command and command[0] == "claude":
             raise AssertionError("MCP payloads must not run claude mcp list")
         if command and command[0] == "ps":
-            return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+            return subprocess.CompletedProcess(command, 0, stdout="101 1 ordinary-fixture", stderr="")
         raise AssertionError(f"unexpected subprocess command: {command}")
 
     monkeypatch.setattr(subprocess, "run", fail_if_claude_mcp_list)
