@@ -127,6 +127,8 @@ query your local MCP surface without leaving the conversation.
 | `deep_scan` | Grade the named servers, or all servers when the list is empty (static, no spawning). Accepts `names: list[str]`. Returns JSON. |
 | `list_sources` | Per-collector source counts from a discover run. Returns JSON. |
 
+The registry manifest describes package launch. Use MCP discovery (`tools/list`) for the installed tool inventory and parameter descriptions.
+
 ### Run the server
 
 ```bash

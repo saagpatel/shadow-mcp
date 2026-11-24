@@ -94,7 +94,10 @@ def build_server() -> Any:
 
     @app.tool()
     def deep_scan(names: list[str]) -> str:
-        """Grade only the named servers (static, no spawning). Returns JSON."""
+        """Grade the named servers, or all servers when the list is empty (static, no spawning).
+
+        Returns JSON.
+        """
         return deep_scan_payload(names)
 
     @app.tool()
