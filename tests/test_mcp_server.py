@@ -103,3 +103,14 @@ def test_default_payloads_do_not_run_claude_cli(fake_home, monkeypatch) -> None:
     mcp_server.discover_local_payload(mcp_server._default_args(fake_home))
     mcp_server.deep_scan_payload([], mcp_server._default_args(fake_home))
     mcp_server.list_sources_payload(mcp_server._default_args(fake_home))
+
+
+def test_registered_deep_scan_describes_empty_selection():
+    import asyncio
+
+    from shadow_mcp.mcp_server import build_server
+
+    tools = {tool.name: tool for tool in asyncio.run(build_server().list_tools())}
+    description = str(tools["deep_scan"].description).lower()
+    assert "all servers when the list is empty" in description
+    assert "static" in description and "no spawning" in description
