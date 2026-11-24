@@ -119,9 +119,10 @@ def test_registered_deep_scan_describes_empty_selection():
 def test_registered_static_tools_grade_in_an_event_loop(fake_home, tmp_path, monkeypatch, capsys):
     import asyncio
 
-    import mcp_audit.api
+    import pytest
     from mcp.shared.memory import create_connected_server_and_client_session
 
+    api = pytest.importorskip("mcp_audit.api")
     args = _test_args(fake_home, tmp_path)
     args.no_mcpaudit = False
     args.no_compute = True
@@ -143,7 +144,7 @@ def test_registered_static_tools_grade_in_an_event_loop(fake_home, tmp_path, mon
         print("fixture-engine-output")
         return {"schema_version": 1, "audits": [{"risk_score": scores}]}
 
-    monkeypatch.setattr(mcp_audit.api, "scan_config_only_dict", static_scan)
+    monkeypatch.setattr(api, "scan_config_only_dict", static_scan)
 
     async def grades():
         reports = []
